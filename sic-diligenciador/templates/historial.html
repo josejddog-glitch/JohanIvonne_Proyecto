@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Historial – SIC Diligenciador</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+<style>
+  table.casos {
+    width: 100%; border-collapse: collapse; font-size: 14px;
+  }
+  table.casos th, table.casos td {
+    text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  table.casos th {
+    font-size: 12px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .05em;
+  }
+  table.casos tr:hover td { background: #fafbfc; }
+  .caso-id { font-family: monospace; font-size: 12px; color: var(--muted); }
+  .descargas-mini { display: flex; gap: 6px; flex-wrap: wrap; }
+  .descargas-mini a {
+    font-size: 12px; padding: 3px 9px; border-radius: 4px;
+    background: var(--primary); color: white; text-decoration: none;
+    font-weight: 500;
+  }
+  .descargas-mini a:hover { background: var(--primary-dark); }
+  .filtros { display: flex; gap: 10px; align-items: center; margin: 0 0 14px; flex-wrap: wrap; }
+  .filtros input { width: 260px; }
+  .vacio {
+    padding: 40px; text-align: center; color: var(--muted);
+  }
+</style>
+</head>
+<body>
+
+<header class="brand">
+  <div class="logo">SIC</div>
+  <h1>Historial de casos</h1>
+</header>
+<p class="tagline">Últimos 50 casos procesados, más reciente arriba.</p>
+
+<section class="card">
+  <div class="filtros">
+    <input type="text" id="filtro" placeholder="Filtrar por id, expediente o sentido...">
+    <button class="secondary" id="refrescar">Refrescar</button>
+    <a class="back" href="/" style="margin-left: auto;">+ Procesar nuevo caso</a>
+  </div>
+
+  <div id="contenedor">
+    <div class="vacio">Cargando...</div>
+  </div>
+</section>
+
+<script>
+const cont = document.getElementById("contenedor");
+const filtro = document.getElementById("filtro");
+let TODOS = [];
+
+function fmtFecha(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" });
+  } catch { return iso.slice(0, 16); }
+}
+
+function pintar(casos) {
+  if (!casos.length) {
+    cont.innerHTML = '<div class="vacio">No hay casos que coincidan.</div>';
+    return;
+  }
+  let html = '<table class="casos"><thead><tr>' +
+    '<th>Fecha</th><th>ID</th><th>Expediente</th>' +
+    '<th>Estado</th><th>Sentido</th><th>Acciones</th>' +
+    '</tr></thead><tbody>';
+  casos.forEach(c => {
+    const desc = c.descargas.length
+      ? `<div class="descargas-mini">${c.descargas.map(d =>
+          `<a href="${d.url}" title="${d.nombre}">${d.nombre.split('.').pop().toUpperCase()}</a>`
+        ).join("")}</div>`
+      : "—";
+    html += `<tr>
+      <td>${fmtFecha(c.iniciado)}</td>
+      <td><span class="caso-id">${c.caso_id}</span></td>
+      <td>${c.expediente || "—"}</td>
+      <td><span class="estado-pill ${c.estado}">${c.estado}</span></td>
+      <td>${c.sentido || "—"}</td>
+      <td>
+        <a class="back" href="${c.url_caso}">Ver</a>
+        ${desc !== "—" ? " · " + desc : ""}
+      </td>
+    </tr>`;
+  });
+  html += "</tbody></table>";
+  cont.innerHTML = html;
+}
+
+function aplicarFiltro() {
+  const q = filtro.value.trim().toLowerCase();
+  if (!q) return pintar(TODOS);
+  pintar(TODOS.filter(c =>
+    c.caso_id.toLowerCase().includes(q) ||
+    (c.expediente || "").toLowerCase().includes(q) ||
+    (c.sentido || "").toLowerCase().includes(q) ||
+    (c.estado || "").toLowerCase().includes(q)
+  ));
+}
+
+async function cargar() {
+  cont.innerHTML = '<div class="vacio">Cargando...</div>';
+  try {
+    const r = await fetch("/historial");
+    const j = await r.json();
+    TODOS = j.casos || [];
+    if (!TODOS.length) {
+      cont.innerHTML = '<div class="vacio">Aún no hay casos procesados.<br>'
+        + '<a class="back" href="/">Empieza con uno</a>.</div>';
+      return;
+    }
+    aplicarFiltro();
+  } catch (e) {
+    cont.innerHTML = '<div class="vacio">Error: ' + e.message + '</div>';
+  }
+}
+
+filtro.addEventListener("input", aplicarFiltro);
+document.getElementById("refrescar").addEventListener("click", cargar);
+cargar();
+</script>
+</body>
+</html>

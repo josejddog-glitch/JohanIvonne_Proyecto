@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caso {{ caso_id }} – SIC Diligenciador</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+
+<header class="brand">
+  <div class="logo">SIC</div>
+  <h1>Procesando caso</h1>
+</header>
+<p class="tagline" style="font-family: monospace; font-size: 12px;">{{ caso_id }}</p>
+
+<section class="card">
+  <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+    <span style="font-size: 14px; color: var(--muted);">Estado actual:</span>
+    <span id="estado" class="estado-pill pendiente">cargando...</span>
+  </div>
+
+  <div class="steps">
+    <div class="stepi" data-s="clasificando">1 · Clasificando</div>
+    <div class="stepi" data-s="transcribiendo">2 · Transcribiendo audio</div>
+    <div class="stepi" data-s="redactando">3 · Redactando</div>
+    <div class="stepi" data-s="listo">4 · Listo</div>
+  </div>
+
+  <div class="hint-box" id="tiempoMsg">
+    Esto suele tardar entre 5 y 15 minutos. Puedes dejar la pestaña abierta y seguir trabajando — verás el log abajo.
+  </div>
+
+  <details>
+    <summary style="cursor: pointer; font-size: 13px; color: var(--muted);">Ver log técnico</summary>
+    <div class="log" id="log" style="margin-top: 8px;">...</div>
+  </details>
+</section>
+
+<!-- Resultado -->
+<section class="card" id="descPanel" style="display: none;">
+  <h2>✓ Borrador listo</h2>
+  <p style="margin: 0 0 12px; font-size: 14px; color: var(--muted);">
+    Descarga los dos archivos. Revisa el <strong>resumen.md</strong> primero — trae el sentido sugerido, argumentos a favor/en contra, y los datos que necesitan verificación manual.
+  </p>
+  <div class="descargas-grid" id="desc"></div>
+</section>
+
+<!-- Regenerar -->
+<section class="card" id="regenPanel" style="display: none;">
+  <h2>Ajustar el borrador</h2>
+  <p style="margin: 0 0 8px; font-size: 14px;">
+    ¿Algo no quedó bien? Escribe brevemente qué cambiar y la herramienta hará una nueva versión teniendo en cuenta tus notas.
+  </p>
+  <div class="hint-box">
+    Ejemplos: <em>"En el TERCERO falta mencionar el SMS del 18-JUL-25"</em> · <em>"El sentido debe ser MODIFICA, no CONFIRMA, porque el aviso del operador no cumple los 15 días hábiles"</em>
+  </div>
+  <textarea id="observaciones" placeholder="Tus observaciones..."></textarea>
+  <label style="display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; cursor: pointer;">
+    <input type="checkbox" id="guardarAprendizaje">
+    <span>📘 <strong>Guardar como aprendizaje permanente</strong> — se aplicará a todos los casos futuros (escribe en <code>knowledge/learnings.md</code>).</span>
+  </label>
+  <div class="actions" style="margin-top: 12px;">
+    <button class="secondary" id="btnRegen">Regenerar con estas notas</button>
+  </div>
+  <div class="toast info" id="regenMsg"></div>
+</section>
+
+<!-- Feedback -->
+<section class="card" id="fbPanel" style="display: none;">
+  <h2>Feedback rápido <span style="font-weight: normal; color: var(--muted); font-size: 13px;">(opcional, ayuda a mejorar la herramienta)</span></h2>
+  <p style="margin: 0 0 8px; font-size: 14px;">
+    Cuando termines de revisar y firmar, registra cómo te fue. Estos datos alimentan el reporte de calibración.
+  </p>
+
+  <div class="row">
+    <div class="col">
+      <label class="field">Sentido CORRECTO <span class="help">(el que firmaste)</span></label>
+      <select id="fbSentido">
+        <option value="">— Selecciona —</option>
+        <option>CONFIRMA</option>
+        <option>MODIFICA</option>
+        <option>REVOCA</option>
+        <option>IMPROCEDENTE</option>
+        <option>OTRO</option>
+      </select>
+    </div>
+    <div class="col">
+      <label class="field">Sentido sugerido por la IA <span class="help">(opcional)</span></label>
+      <input type="text" id="fbSentidoIA" placeholder="auto-detectado">
+    </div>
+    <div class="col" style="max-width: 200px;">
+      <label class="field">Calidad general</label>
+      <select id="fbCalidad">
+        <option value="1">1 — Mala</option>
+        <option value="2">2 — Floja</option>
+        <option value="3" selected>3 — Aceptable</option>
+        <option value="4">4 — Buena</option>
+        <option value="5">5 — Excelente</option>
+      </select>
+    </div>
+  </div>
+
+  <label class="field" style="margin-top: 16px;">Secciones donde tuviste que reescribir</label>
+  <div class="checks" id="fbSecciones">
+    <label><input type="checkbox" value="PRIMERO"> PRIMERO</label>
+    <label><input type="checkbox" value="SEGUNDO"> SEGUNDO</label>
+    <label><input type="checkbox" value="TERCERO"> TERCERO</label>
+    <label><input type="checkbox" value="CUARTO"> CUARTO</label>
+    <label><input type="checkbox" value="QUINTO"> QUINTO</label>
+    <label><input type="checkbox" value="RESUELVE"> RESUELVE</label>
+    <label><input type="checkbox" value="Citas a pruebas"> Citas a pruebas</label>
+    <label><input type="checkbox" value="Selección de bloques"> Selección de bloques</label>
+  </div>
+
+  <label class="field">¿Faltó algún bloque jurídico? <span class="help">(nombre o tema, separados por coma)</span></label>
+  <input type="text" id="fbBloquesFalt" placeholder="ej: cesion_contrato, roaming...">
+
+  <label class="field">Comentarios libres</label>
+  <textarea id="fbComentarios" placeholder="Lo que quieras agregar..."></textarea>
+
+  <div class="actions" style="margin-top: 16px;">
+    <button class="success" id="btnFb">Enviar feedback</button>
+  </div>
+  <div class="toast success" id="fbMsg"></div>
+</section>
+
+<!-- Error -->
+<section class="card" id="errPanel" style="display: none;">
+  <h2 style="color: var(--error);">⚠ Hubo un error</h2>
+  <pre id="errBody" style="white-space: pre-wrap; background: var(--error-bg); padding: 14px; border-radius: 6px; font-size: 13px;"></pre>
+</section>
+
+<p style="margin-top: 28px;"><a class="back" href="/">← Procesar otro caso</a></p>
+
+<script>
+const casoId = {{ caso_id|tojson }};
+const ESTADOS = ["clasificando", "transcribiendo", "redactando", "listo"];
+const estadoEl = document.getElementById("estado");
+const logEl = document.getElementById("log");
+const descPanel = document.getElementById("descPanel");
+const descEl = document.getElementById("desc");
+const regenPanel = document.getElementById("regenPanel");
+const fbPanel = document.getElementById("fbPanel");
+const errPanel = document.getElementById("errPanel");
+const errBody = document.getElementById("errBody");
+const tiempoMsg = document.getElementById("tiempoMsg");
+
+let polling = true;
+
+function pintarPasos(estado) {
+  document.querySelectorAll(".steps .stepi").forEach(el => {
+    el.classList.remove("active", "done");
+    const s = el.dataset.s;
+    const i = ESTADOS.indexOf(s);
+    const ci = ESTADOS.indexOf(estado);
+    if (estado === "listo") {
+      el.classList.add("done");
+    } else if (i < ci) {
+      el.classList.add("done");
+    } else if (i === ci) {
+      el.classList.add("active");
+    }
+  });
+}
+
+async function tick() {
+  try {
+    const r = await fetch(`/status/${casoId}`);
+    const j = await r.json();
+    estadoEl.textContent = j.estado;
+    estadoEl.className = "estado-pill " + j.estado;
+    pintarPasos(j.estado);
+    logEl.textContent = (j.log || []).join("\n");
+    logEl.scrollTop = logEl.scrollHeight;
+
+    if (j.estado === "listo" && j.descargas) {
+      tiempoMsg.style.display = "none";
+      descPanel.style.display = "block";
+      descEl.innerHTML = j.descargas.map(d => {
+        const ext = d.nombre.split(".").pop().toUpperCase();
+        return `<a href="${d.url}"><span class="badge">${ext}</span><span>${d.nombre}</span></a>`;
+      }).join("");
+      regenPanel.style.display = "block";
+      fbPanel.style.display = "block";
+      polling = false;
+      return;
+    }
+    if (j.estado === "error") {
+      tiempoMsg.style.display = "none";
+      errPanel.style.display = "block";
+      errBody.textContent = j.error || "Falló el procesamiento.";
+      regenPanel.style.display = "block";
+      polling = false;
+      return;
+    }
+    if (polling) setTimeout(tick, 4000);
+  } catch (e) {
+    errBody.textContent = "Error consultando estado: " + e.message;
+    errPanel.style.display = "block";
+    if (polling) setTimeout(tick, 8000);
+  }
+}
+tick();
+
+document.getElementById("btnRegen").addEventListener("click", async () => {
+  const obs = document.getElementById("observaciones").value.trim();
+  const guardar = document.getElementById("guardarAprendizaje").checked;
+  const msg = document.getElementById("regenMsg");
+  msg.className = "toast";
+  if (!obs) {
+    msg.className = "toast error visible"; msg.textContent = "Escribe primero las observaciones.";
+    return;
+  }
+  msg.className = "toast info visible";
+  msg.textContent = guardar ? "Enviando y guardando como aprendizaje..." : "Enviando...";
+  const r = await fetch(`/regenerar/${casoId}`, {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({observaciones: obs, guardar_aprendizaje: guardar})
+  });
+  const j = await r.json();
+  if (j.error) {
+    msg.className = "toast error visible"; msg.textContent = "Error: " + j.error;
+    return;
+  }
+  msg.className = "toast success visible";
+  msg.textContent = "Regeneración lanzada. Recargando...";
+  setTimeout(() => location.reload(), 1500);
+});
+
+document.getElementById("btnFb").addEventListener("click", async () => {
+  const sentido = document.getElementById("fbSentido").value;
+  const sentidoIA = document.getElementById("fbSentidoIA").value;
+  const calidad = document.getElementById("fbCalidad").value;
+  const comentarios = document.getElementById("fbComentarios").value;
+  const bloquesFalt = document.getElementById("fbBloquesFalt").value;
+  const secciones = [...document.querySelectorAll("#fbSecciones input:checked")].map(i => i.value);
+  const msg = document.getElementById("fbMsg");
+  msg.className = "toast";
+  if (!sentido) {
+    msg.className = "toast error visible"; msg.textContent = "Selecciona el sentido correcto.";
+    return;
+  }
+  msg.className = "toast info visible"; msg.textContent = "Guardando...";
+  const r = await fetch(`/feedback/${casoId}`, {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      sentido_correcto: sentido, sentido_sugerido: sentidoIA,
+      calidad_general: calidad, comentarios, secciones_problematicas: secciones,
+      bloques_faltantes: bloquesFalt
+    })
+  });
+  const j = await r.json();
+  if (j.error) {
+    msg.className = "toast error visible"; msg.textContent = "Error: " + j.error;
+    return;
+  }
+  msg.className = "toast success visible"; msg.textContent = "✓ ¡Gracias! Feedback registrado.";
+  document.getElementById("btnFb").disabled = true;
+});
+</script>
+</body>
+</html>

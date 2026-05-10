@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SIC Diligenciador</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+
+<header class="brand" style="justify-content: space-between;">
+  <div style="display: flex; align-items: center; gap: 12px;">
+    <div class="logo">SIC</div>
+    <h1>Diligenciador de resoluciones</h1>
+  </div>
+  <a class="back" href="/casos" style="font-size: 14px;">📁 Ver historial</a>
+</header>
+<p class="tagline">Borradores de apelaciones de comunicaciones — listos para revisar y firmar.</p>
+
+<section class="card">
+  <h2><span class="step">1</span>Sube los archivos del caso</h2>
+  <div class="hint-box">
+    <strong>El expediente</strong> (PDF) es obligatorio. <strong>Anexos</strong> (PDFs, Words) y <strong>audios</strong> (MP3/WAV) son opcionales pero recomendados — la herramienta los analiza todos. Los archivos no se suben a internet.
+  </div>
+
+  <label class="drop" id="drop">
+    <input type="file" id="archivos" multiple accept=".pdf,.docx,.doc,.mp3,.wav,.m4a,.ogg,.flac">
+    <div>📎 <strong>Haz clic o arrastra aquí</strong></div>
+    <span class="hint">Acepta PDF, Word, MP3, WAV, M4A, OGG</span>
+  </label>
+
+  <ul class="file-list" id="lista"></ul>
+
+  <div class="toast info" id="info">
+    Tras pulsar <strong>Diligenciar</strong>, espera entre 5 y 15 minutos según el tamaño y la cantidad de audios. Verás el progreso en vivo en la siguiente pantalla.
+  </div>
+
+  <div class="actions">
+    <button class="primary" id="enviar" disabled>Diligenciar</button>
+  </div>
+
+  <div class="toast error" id="errMsg"></div>
+</section>
+
+<section class="card">
+  <h2><span class="step">2</span>¿Cómo funciona?</h2>
+  <p style="margin: 4px 0 6px; font-size: 14px;">
+    1. La herramienta clasifica los archivos: detecta cuál es el expediente principal y cuáles son anexos.<br>
+    2. Si hay audios, los transcribe localmente con Whisper (con marcas de tiempo para citar minutos).<br>
+    3. Pasa todo a Claude, que aplica las reglas del manual SIC y los bloques jurídicos pre-aprobados, y produce el borrador.<br>
+    4. Recibes un <code>.docx</code> diligenciado y un <code>resumen.md</code> con argumentos a favor/en contra y datos a verificar.
+  </p>
+</section>
+
+<p style="text-align: center; color: var(--muted); font-size: 12px; margin-top: 24px;">
+  Local en tu máquina · Análisis con Claude Code (cuenta Pro)
+</p>
+
+<script>
+const drop = document.getElementById("drop");
+const input = document.getElementById("archivos");
+const lista = document.getElementById("lista");
+const enviar = document.getElementById("enviar");
+const info = document.getElementById("info");
+const errMsg = document.getElementById("errMsg");
+let archivos = [];
+
+const AUDIO = [".mp3",".wav",".m4a",".ogg",".flac"];
+const DOC = [".docx",".doc"];
+
+function tipoBadge(name) {
+  const ext = "." + name.split(".").pop().toLowerCase();
+  if (AUDIO.includes(ext)) return ['aud', 'AUDIO'];
+  if (DOC.includes(ext)) return ['doc', 'WORD'];
+  if (ext === ".pdf") return ['pdf', 'PDF'];
+  return ['', '?'];
+}
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/1024/1024).toFixed(1) + ' MB';
+}
+
+function pintarLista() {
+  lista.innerHTML = "";
+  archivos.forEach((f, i) => {
+    const [cls, lbl] = tipoBadge(f.name);
+    const li = document.createElement("li");
+    li.innerHTML = `
+      <span class="badge ${cls}">${lbl}</span>
+      <span class="name">${f.name}</span>
+      <span class="size">${fmtSize(f.size)}</span>
+      <button class="x" title="Quitar" data-i="${i}">×</button>`;
+    lista.appendChild(li);
+  });
+  lista.querySelectorAll("button.x").forEach(b =>
+    b.addEventListener("click", e => {
+      e.preventDefault();
+      archivos.splice(+b.dataset.i, 1);
+      pintarLista();
+    })
+  );
+  enviar.disabled = archivos.length === 0;
+  info.classList.toggle("visible", archivos.length > 0);
+}
+
+input.addEventListener("change", () => {
+  archivos = [...archivos, ...Array.from(input.files)];
+  input.value = "";
+  pintarLista();
+});
+
+["dragenter","dragover"].forEach(ev =>
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); })
+);
+["dragleave","drop"].forEach(ev =>
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); })
+);
+drop.addEventListener("drop", e => {
+  archivos = [...archivos, ...Array.from(e.dataTransfer.files)];
+  pintarLista();
+});
+
+enviar.addEventListener("click", async () => {
+  enviar.disabled = true;
+  enviar.textContent = "Subiendo...";
+  errMsg.classList.remove("visible");
+
+  const fd = new FormData();
+  archivos.forEach(f => fd.append("archivos", f));
+  try {
+    const r = await fetch("/upload", { method: "POST", body: fd });
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    window.location.href = j.url_caso;
+  } catch (e) {
+    errMsg.textContent = "Error: " + e.message;
+    errMsg.classList.add("visible");
+    enviar.disabled = false;
+    enviar.textContent = "Diligenciar";
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+
+# Distribución / empaquetado
+dist/
+build/
+*.spec
+*.egg-info/
+
+# Output del pipeline (datos generados en runtime)
+sic-diligenciador/workspaces/
+sic-diligenciador/cache/
+sic-diligenciador/audit.csv
+sic-diligenciador/feedback.jsonl
+
+# Casos de ejemplo (datos personales reales: expedientes, facturas, audios)
+sic-diligenciador/knowledge/ejemplos/
+ejemplos/
+
+# Resolución firmada con CUN real en raíz
+25-642737*.docx
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Secretos (precaución general — no se detectó ninguno en el repo actual)
+.env
+.env.*
+*.key
+*.pem
+secrets.*
