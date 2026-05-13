@@ -35,9 +35,10 @@
 </head>
 <body>
 
+{% include "_navbar.html" %}
+
 <header class="brand">
-  <div class="logo">SIC</div>
-  <h1>Historial de casos</h1>
+  <h1 style="margin: 0;">Historial de casos</h1>
 </header>
 <p class="tagline">Últimos 50 casos procesados, más reciente arriba.</p>
 
@@ -45,7 +46,7 @@
   <div class="filtros">
     <input type="text" id="filtro" placeholder="Filtrar por id, expediente o sentido...">
     <button class="secondary" id="refrescar">Refrescar</button>
-    <a class="back" href="/" style="margin-left: auto;">+ Procesar nuevo caso</a>
+    <a class="back" href="/individual" style="margin-left: auto;">+ Procesar nuevo caso</a>
   </div>
 
   <div id="contenedor">
@@ -66,6 +67,19 @@ function fmtFecha(iso) {
   } catch { return iso.slice(0, 16); }
 }
 
+function fmtDuracion(seg) {
+  if (seg === null || seg === undefined) return '<span style="color: var(--muted);">—</span>';
+  if (seg < 1) return "< 1s";
+  const s = Math.floor(seg);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m < 60) return `${m}m ${r}s`;
+  const h = Math.floor(m / 60);
+  const mr = m % 60;
+  return `${h}h ${mr}m`;
+}
+
 function pintar(casos) {
   if (!casos.length) {
     cont.innerHTML = '<div class="vacio">No hay casos que coincidan.</div>';
@@ -73,7 +87,7 @@ function pintar(casos) {
   }
   let html = '<table class="casos"><thead><tr>' +
     '<th>Fecha</th><th>ID</th><th>Expediente</th>' +
-    '<th>Estado</th><th>Sentido</th><th>Acciones</th>' +
+    '<th>Estado</th><th>Sentido</th><th>Tiempo</th><th>Acciones</th>' +
     '</tr></thead><tbody>';
   casos.forEach(c => {
     const desc = c.descargas.length
@@ -81,12 +95,20 @@ function pintar(casos) {
           `<a href="${d.url}" title="${d.nombre}">${d.nombre.split('.').pop().toUpperCase()}</a>`
         ).join("")}</div>`
       : "—";
+    // Tiempo: si está procesando, en cursiva con "..."; si terminó, fijo.
+    const estTermino = c.estado === "listo" || c.estado === "error";
+    const tiempoHtml = c.duracion_seg !== null && c.duracion_seg !== undefined
+      ? (estTermino
+          ? `<span style="font-family: monospace; font-size: 13px;">${fmtDuracion(c.duracion_seg)}</span>`
+          : `<span style="font-family: monospace; font-size: 13px; font-style: italic; color: var(--muted);">${fmtDuracion(c.duracion_seg)}...</span>`)
+      : '<span style="color: var(--muted);">—</span>';
     html += `<tr>
       <td>${fmtFecha(c.iniciado)}</td>
       <td><span class="caso-id">${c.caso_id}</span></td>
       <td>${c.expediente || "—"}</td>
       <td><span class="estado-pill ${c.estado}">${c.estado}</span></td>
       <td>${c.sentido || "—"}</td>
+      <td>${tiempoHtml}</td>
       <td>
         <a class="back" href="${c.url_caso}">Ver</a>
         ${desc !== "—" ? " · " + desc : ""}

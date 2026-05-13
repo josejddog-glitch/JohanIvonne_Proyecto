@@ -1,0 +1,128 @@
+{# Navbar compartido — se incluye con include "_navbar.html" al inicio de cada página #}
+<nav class="topnav">
+  <a class="topnav-brand" href="/" title="Ir al inicio">
+    <div class="logo">SIC</div>
+    <span class="topnav-brand-txt">Diligenciador</span>
+  </a>
+
+  <ul class="topnav-menu" id="topnavMenu">
+    <li class="topnav-dropdown">
+      <button class="topnav-btn" type="button" data-toggle="dropdown" aria-expanded="false">
+        <span>📦 Lotes</span>
+        <span class="caret">▾</span>
+      </button>
+      <ul class="topnav-submenu">
+        <li><a href="/batch">➕ Nuevo lote</a></li>
+        <li><a href="/batches">📁 Historial de lotes</a></li>
+      </ul>
+    </li>
+
+    <li class="topnav-dropdown">
+      <button class="topnav-btn" type="button" data-toggle="dropdown" aria-expanded="false">
+        <span>📄 Individual</span>
+        <span class="caret">▾</span>
+      </button>
+      <ul class="topnav-submenu">
+        <li><a href="/individual">➕ Nuevo caso</a></li>
+        <li><a href="/casos">📁 Historial de casos</a></li>
+      </ul>
+    </li>
+
+    <li>
+      <button class="topnav-btn topnav-btn-danger" type="button" onclick="detenerProcesosGlobal()" id="btnDetenerGlobal" title="Detener todos los casos en curso o en cola">
+        🛑 Detener procesos
+      </button>
+    </li>
+
+    <li>
+      <button class="topnav-btn topnav-btn-warn" type="button" onclick="reiniciarServidor()" id="btnReiniciar" title="Reiniciar el servidor Flask (mata + arranca de nuevo)">
+        🔄 Reiniciar
+      </button>
+    </li>
+  </ul>
+</nav>
+
+<script>
+// Toggle de dropdowns (click para abrir/cerrar)
+document.querySelectorAll('#topnavMenu .topnav-dropdown > .topnav-btn').forEach(btn => {
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const dd = btn.parentElement;
+    const ya = dd.classList.contains('open');
+    // Cerrar todos los demás
+    document.querySelectorAll('#topnavMenu .topnav-dropdown').forEach(d => {
+      d.classList.remove('open');
+      d.querySelector('.topnav-btn').setAttribute('aria-expanded', 'false');
+    });
+    if (!ya) {
+      dd.classList.add('open');
+      btn.setAttribute('aria-expanded', 'true');
+    }
+  });
+});
+// Cerrar dropdowns al click fuera o ESC
+document.addEventListener('click', () => {
+  document.querySelectorAll('#topnavMenu .topnav-dropdown').forEach(d => {
+    d.classList.remove('open');
+    d.querySelector('.topnav-btn').setAttribute('aria-expanded', 'false');
+  });
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('#topnavMenu .topnav-dropdown').forEach(d => d.classList.remove('open'));
+  }
+});
+
+// Reiniciar el servidor (lanza reiniciar.vbs desacoplado y cierra esta pestaña)
+async function reiniciarServidor() {
+  const btn = document.getElementById("btnReiniciar");
+  if (!confirm("¿Reiniciar el servidor?\n\nEsto:\n• Mata el proceso Flask actual\n• Espera 2 segundos\n• Vuelve a arrancar el servidor\n\nLa pestaña actual quedará desconectada y se cerrará automáticamente. Para volver a usar la app, abrí http://localhost:8000 en una nueva pestaña.")) return;
+  btn.disabled = true;
+  const txtOriginal = btn.innerHTML;
+  btn.innerHTML = "⏳ Reiniciando...";
+  try {
+    // El fetch puede no completarse: Flask va a morir en ~50ms tras lanzar el .vbs.
+    await fetch("/api/reiniciar", { method: "POST" });
+  } catch (e) {
+    // Esperado — la conexión se cae cuando Flask muere. No es error.
+  }
+  // Intentar cerrar la pestaña actual. window.close() solo funciona en
+  // pestañas abiertas por script. El truco con window.open(...).close()
+  // a veces funciona; si no, mostramos un mensaje de fallback.
+  setTimeout(() => {
+    try {
+      window.open("", "_self").close();
+    } catch {}
+    // Fallback si la pestaña sigue abierta (navegador no permitió cerrar)
+    document.body.innerHTML =
+      '<div style="text-align:center; padding:60px; font-family:sans-serif;">' +
+      '<h2 style="font-size:24px;">🔄 Servidor reiniciándose...</h2>' +
+      '<p style="font-size:16px; color:#666;">Podés cerrar esta pestaña manualmente.</p>' +
+      '<p style="font-size:14px; color:#888;">El servidor estará disponible de nuevo en unos segundos.</p>' +
+      '<p style="margin-top:30px;"><a href="/" style="padding:10px 24px; background:#2563eb; color:white; text-decoration:none; border-radius:6px;">↻ Recargar</a></p>' +
+      "</div>";
+  }, 500);
+}
+
+// Detener procesos (función global accesible desde toda la app)
+async function detenerProcesosGlobal() {
+  const btn = document.getElementById("btnDetenerGlobal");
+  if (!confirm("¿Detener TODOS los procesos en curso?\n\nEsto:\n• Vacía la cola del worker\n• Mata los subprocesos claude colgados\n• Marca casos no terminales como error\n\nLos casos ya terminados (listos) no se tocan.")) return;
+  btn.disabled = true;
+  const txtOriginal = btn.innerHTML;
+  btn.innerHTML = "⏳ Deteniendo...";
+  try {
+    const r = await fetch("/api/detener-procesos", { method: "POST" });
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    const s = j.stats;
+    alert(`✓ Procesos detenidos.\n\n• Cola vaciada: ${s.cola_vaciada}\n• Subprocesos claude matados: ${s.subprocesos_claude_matados >= 0 ? s.subprocesos_claude_matados : "(psutil no instalado)"}\n• Casos marcados como error: ${s.casos_marcados_error}`);
+    location.reload();
+  } catch (e) {
+    alert("Error: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = txtOriginal;
+  }
+}
+</script>

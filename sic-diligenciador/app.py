@@ -100,12 +100,20 @@ def historial():
             clas = est.clasificacion or {}
             if clas.get("expediente_principal"):
                 expediente = Path(clas["expediente_principal"]).name
+            # Duración del caso: si terminó (listo/error), fin - inicio.
+            # Si está en curso, ahora - inicio. Si está en cola/pendiente, None.
+            if est.estado in {"en_cola", "pendiente"}:
+                duracion_seg = None
+            else:
+                duracion_seg = batch._duracion_seg(est.iniciado, est.finalizado)
             casos.append({
                 "caso_id": est.caso_id,
                 "iniciado": est.iniciado,
+                "finalizado": est.finalizado,
                 "estado": est.estado,
                 "expediente": expediente,
                 "sentido": sentido,
+                "duracion_seg": duracion_seg,
                 "url_caso": url_for("caso", caso_id=est.caso_id),
                 "descargas": [
                     {
@@ -350,6 +358,43 @@ def api_detener_procesos():
     """
     stats = batch.detener_procesos()
     return jsonify({"ok": True, "stats": stats})
+
+
+@app.route("/api/reiniciar", methods=["POST"])
+def api_reiniciar():
+    """Endpoint para el botón 'Reiniciar' de la UI. Lanza `reiniciar.vbs`
+    como subproceso DESACOPLADO (no hijo de Flask) porque ese script va a
+    matar al propio Flask en cuestión de milisegundos. El subproceso sigue
+    vivo y vuelve a arrancar Flask en ~2 segundos.
+
+    La respuesta puede llegar al cliente o no — Flask muere antes de
+    completar el handler. El frontend debe asumir que la conexión va a
+    romperse y cerrar la pestaña sola.
+    """
+    import subprocess
+    reiniciar_path = ROOT / "reiniciar.vbs"
+    if not reiniciar_path.exists():
+        return jsonify({"error": "reiniciar.vbs no encontrado"}), 500
+    try:
+        # En Windows, DETACHED_PROCESS + CREATE_NEW_PROCESS_GROUP separa el
+        # proceso hijo del padre. Cuando el padre (Flask) muera por
+        # detener.vbs, el hijo (reiniciar.vbs) sigue corriendo solo.
+        creationflags = 0
+        if hasattr(subprocess, "DETACHED_PROCESS"):
+            creationflags |= subprocess.DETACHED_PROCESS
+        if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+            creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP
+        subprocess.Popen(
+            ["wscript.exe", str(reiniciar_path)],
+            cwd=str(ROOT),
+            creationflags=creationflags,
+            close_fds=True,
+        )
+        logging.info("Reiniciar lanzado vía /api/reiniciar (subproceso desacoplado).")
+        return jsonify({"ok": True, "mensaje": "Reinicio iniciado. El servidor se va a apagar en segundos y volverá a arrancar solo."})
+    except Exception as e:
+        logging.exception("Error lanzando reiniciar.vbs")
+        return jsonify({"error": f"No se pudo lanzar el reinicio: {e}"}), 500
 
 
 @app.route("/batches", methods=["GET"])

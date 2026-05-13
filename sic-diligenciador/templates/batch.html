@@ -8,42 +8,11 @@
 </head>
 <body>
 
-<header class="brand" style="justify-content: space-between;">
-  <div style="display: flex; align-items: center; gap: 12px;">
-    <div class="logo">SIC</div>
-    <h1>{% if batch_id %}Procesando lote{% else %}Procesar varios casos (lote){% endif %}</h1>
-  </div>
-  <div style="display: flex; gap: 12px; align-items: center;">
-    <button id="btnDetenerGlobal" onclick="detenerProcesosGlobal()" style="background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 600;">🛑 Detener procesos</button>
-    <a class="back" href="/individual" style="font-size: 14px;">📄 Caso individual</a>
-    <a class="back" href="/batches" style="font-size: 14px;">📁 Historial de lotes</a>
-  </div>
-</header>
+{% include "_navbar.html" %}
 
-<script>
-async function detenerProcesosGlobal() {
-  const btn = document.getElementById("btnDetenerGlobal");
-  if (!confirm("¿Detener TODOS los procesos en curso?\n\nEsto:\n• Vacía la cola del worker (casos en_cola se descartan)\n• Mata los subprocesos claude colgados\n• Marca todos los casos no terminales como error\n\nLos casos ya terminados (listos) no se tocan.")) return;
-  btn.disabled = true;
-  btn.textContent = "Deteniendo...";
-  try {
-    const r = await fetch("/api/detener-procesos", { method: "POST" });
-    const j = await r.json();
-    if (j.error) throw new Error(j.error);
-    const s = j.stats;
-    let msg = `✓ Procesos detenidos.\n\n` +
-      `• Casos quitados de la cola: ${s.cola_vaciada}\n` +
-      `• Subprocesos claude matados: ${s.subprocesos_claude_matados >= 0 ? s.subprocesos_claude_matados : "(psutil no instalado, no se mataron)"}\n` +
-      `• Casos marcados como error: ${s.casos_marcados_error}`;
-    alert(msg);
-    location.reload();
-  } catch (e) {
-    alert("Error: " + e.message);
-    btn.disabled = false;
-    btn.textContent = "🛑 Detener procesos";
-  }
-}
-</script>
+<header class="brand">
+  <h1 style="margin: 0;">{% if batch_id %}Procesando lote{% else %}Procesar varios casos (lote){% endif %}</h1>
+</header>
 
 {% if not batch_id %}
 <!-- ============ MODO UPLOAD ============ -->
