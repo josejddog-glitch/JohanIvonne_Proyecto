@@ -13,7 +13,10 @@
     <div class="logo">SIC</div>
     <h1>Diligenciador de resoluciones</h1>
   </div>
-  <a class="back" href="/casos" style="font-size: 14px;">📁 Ver historial</a>
+  <div style="display: flex; gap: 16px; align-items: center;">
+    <a class="back" href="/batch" style="font-size: 14px;">📦 Modo lote</a>
+    <a class="back" href="/casos" style="font-size: 14px;">📁 Historial</a>
+  </div>
 </header>
 <p class="tagline">Borradores de apelaciones de comunicaciones — listos para revisar y firmar.</p>
 
@@ -37,7 +40,7 @@
 
   <div class="opcion-fallo" style="margin: 12px 0; padding: 10px 12px; background: #f5f7fb; border-radius: 8px; border: 1px solid #e0e6ef;">
     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
-      <input type="checkbox" id="generar_cuarto" checked style="width: 16px; height: 16px; cursor: pointer;">
+      <input type="checkbox" id="generar_cuarto" style="width: 16px; height: 16px; cursor: pointer;">
       <span><strong>Generar CUARTA (Fallar)</strong></span>
     </label>
     <p style="margin: 6px 0 0 24px; font-size: 13px; color: var(--muted, #666);">

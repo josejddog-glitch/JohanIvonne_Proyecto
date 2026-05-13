@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Historial de lotes – SIC Diligenciador</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+
+<header class="brand" style="justify-content: space-between;">
+  <div style="display: flex; align-items: center; gap: 12px;">
+    <div class="logo">SIC</div>
+    <h1>Historial de lotes</h1>
+  </div>
+  <div style="display: flex; gap: 12px; align-items: center;">
+    <button id="btnDetenerGlobal" onclick="detenerProcesosGlobal()" style="background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 600;">🛑 Detener procesos</button>
+    <a class="back" href="/batch" style="font-size: 14px;">📦 Nuevo lote</a>
+    <a class="back" href="/individual" style="font-size: 14px;">Caso individual</a>
+  </div>
+</header>
+
+<script>
+async function detenerProcesosGlobal() {
+  const btn = document.getElementById("btnDetenerGlobal");
+  if (!confirm("¿Detener TODOS los procesos en curso?\n\nEsto:\n• Vacía la cola del worker\n• Mata los subprocesos claude colgados\n• Marca casos no terminales como error\n\nLos casos ya terminados (listos) no se tocan.")) return;
+  btn.disabled = true;
+  btn.textContent = "Deteniendo...";
+  try {
+    const r = await fetch("/api/detener-procesos", { method: "POST" });
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    const s = j.stats;
+    alert(`✓ Procesos detenidos.\n\n• Cola vaciada: ${s.cola_vaciada}\n• Subprocesos claude matados: ${s.subprocesos_claude_matados >= 0 ? s.subprocesos_claude_matados : "(psutil no instalado)"}\n• Casos marcados como error: ${s.casos_marcados_error}`);
+    location.reload();
+  } catch (e) {
+    alert("Error: " + e.message);
+    btn.disabled = false;
+    btn.textContent = "🛑 Detener procesos";
+  }
+}
+</script>
+<p class="tagline">Todos los lotes procesados, del más reciente al más antiguo.</p>
+
+<section class="card">
+  <div id="info" style="font-size: 14px; color: var(--muted); margin-bottom: 12px;">Cargando...</div>
+
+  <table class="batch-tabla" style="width: 100%; border-collapse: collapse; font-size: 14px;">
+    <thead>
+      <tr style="background: #f5f7fb; text-align: left;">
+        <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Lote</th>
+        <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Inicio</th>
+        <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Modo</th>
+        <th style="padding: 8px; border-bottom: 1px solid #e0e6ef; text-align: center;">Casos</th>
+        <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Estado</th>
+        <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Acción</th>
+      </tr>
+    </thead>
+    <tbody id="filas">
+      <tr><td colspan="6" style="padding: 16px; text-align: center; color: var(--muted);">Cargando...</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<script>
+const infoEl = document.getElementById("info");
+const filasEl = document.getElementById("filas");
+
+function fmtFecha(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    return `${dd}/${mm}/${yy} ${hh}:${mi}`;
+  } catch { return iso; }
+}
+
+function badgesContadores(c, total) {
+  const parts = [];
+  if (c.listo > 0) parts.push(`<span class="estado-pill listo">✓ ${c.listo}</span>`);
+  if (c.procesando > 0) parts.push(`<span class="estado-pill clasificando">⏳ ${c.procesando}</span>`);
+  if (c.en_cola > 0) parts.push(`<span class="estado-pill en_cola">🕒 ${c.en_cola}</span>`);
+  if (c.error > 0) parts.push(`<span class="estado-pill error">✗ ${c.error}</span>`);
+  if (parts.length === 0) parts.push('<span class="estado-pill en_cola">vacío</span>');
+  return parts.join(" ");
+}
+
+async function cargar() {
+  try {
+    const r = await fetch("/batches/json");
+    const j = await r.json();
+    const batches = j.batches || [];
+    if (batches.length === 0) {
+      infoEl.textContent = "Aún no has procesado lotes.";
+      filasEl.innerHTML = '<tr><td colspan="6" style="padding: 16px; text-align: center; color: var(--muted);">No hay lotes procesados. <a href="/batch">Crear el primero</a>.</td></tr>';
+      return;
+    }
+    infoEl.innerHTML = `<strong>${batches.length}</strong> lote(s) mostrados (máx 50).`;
+    filasEl.innerHTML = batches.map(b => {
+      const modo = b.generar_cuarto ? "Completo (con CUARTA)" : "Solo hechos";
+      const todoListo = b.contadores.listo === b.total && b.total > 0;
+      const conErrores = b.contadores.error > 0;
+      const procesando = b.contadores.procesando > 0 || b.contadores.en_cola > 0;
+      let estadoGlobal;
+      if (todoListo && !conErrores) estadoGlobal = `<span class="estado-pill listo">terminado</span>`;
+      else if (procesando) estadoGlobal = `<span class="estado-pill clasificando">en curso</span>`;
+      else if (conErrores && !procesando) estadoGlobal = `<span class="estado-pill error">con errores</span>`;
+      else estadoGlobal = `<span class="estado-pill en_cola">desconocido</span>`;
+      return `
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #eef; font-family: monospace; font-size: 12px;">${b.batch_id}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eef;">${fmtFecha(b.iniciado)}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eef; font-size: 13px;">${modo}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eef; text-align: center;"><strong>${b.total}</strong></td>
+          <td style="padding: 8px; border-bottom: 1px solid #eef;">${estadoGlobal}<br><span style="font-size: 12px; margin-top: 4px; display: inline-block;">${badgesContadores(b.contadores, b.total)}</span></td>
+          <td style="padding: 8px; border-bottom: 1px solid #eef;"><a href="/batch/${b.batch_id}">ver →</a></td>
+        </tr>`;
+    }).join("");
+  } catch (e) {
+    infoEl.innerHTML = `<span style="color: var(--error, #c00);">Error: ${e.message}</span>`;
+  }
+}
+cargar();
+// Polling cada 10s para que los lotes en curso reflejen avance
+setInterval(cargar, 10000);
+</script>
+
+</body>
+</html>

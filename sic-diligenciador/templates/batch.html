@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% if batch_id %}Lote {{ batch_id }}{% else %}Procesar lote{% endif %} – SIC Diligenciador</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+
+<header class="brand" style="justify-content: space-between;">
+  <div style="display: flex; align-items: center; gap: 12px;">
+    <div class="logo">SIC</div>
+    <h1>{% if batch_id %}Procesando lote{% else %}Procesar varios casos (lote){% endif %}</h1>
+  </div>
+  <div style="display: flex; gap: 12px; align-items: center;">
+    <button id="btnDetenerGlobal" onclick="detenerProcesosGlobal()" style="background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 600;">🛑 Detener procesos</button>
+    <a class="back" href="/batches" style="font-size: 14px;">📁 Historial</a>
+    <a class="back" href="/individual" style="font-size: 14px;">Caso individual</a>
+  </div>
+</header>
+
+<script>
+async function detenerProcesosGlobal() {
+  const btn = document.getElementById("btnDetenerGlobal");
+  if (!confirm("¿Detener TODOS los procesos en curso?\n\nEsto:\n• Vacía la cola del worker (casos en_cola se descartan)\n• Mata los subprocesos claude colgados\n• Marca todos los casos no terminales como error\n\nLos casos ya terminados (listos) no se tocan.")) return;
+  btn.disabled = true;
+  btn.textContent = "Deteniendo...";
+  try {
+    const r = await fetch("/api/detener-procesos", { method: "POST" });
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    const s = j.stats;
+    let msg = `✓ Procesos detenidos.\n\n` +
+      `• Casos quitados de la cola: ${s.cola_vaciada}\n` +
+      `• Subprocesos claude matados: ${s.subprocesos_claude_matados >= 0 ? s.subprocesos_claude_matados : "(psutil no instalado, no se mataron)"}\n` +
+      `• Casos marcados como error: ${s.casos_marcados_error}`;
+    alert(msg);
+    location.reload();
+  } catch (e) {
+    alert("Error: " + e.message);
+    btn.disabled = false;
+    btn.textContent = "🛑 Detener procesos";
+  }
+}
+</script>
+
+{% if not batch_id %}
+<!-- ============ MODO UPLOAD ============ -->
+<section class="card">
+  <h2><span class="step">1</span>Sube un ZIP con todos los casos</h2>
+  <div class="hint-box">
+    <strong>Estructura esperada del ZIP:</strong> una carpeta por caso. El nombre de la carpeta identifica el caso.
+    <pre style="margin-top: 8px; font-size: 12px; background: #fff; padding: 10px; border-radius: 6px;">mi_lote.zip
+├── caso_aurora/
+│   ├── expediente.pdf
+│   └── audio.mp3
+├── caso_bruno/
+│   ├── expediente.pdf
+│   └── facturas.pdf
+└── caso_celeste/
+    └── expediente.pdf</pre>
+    Los casos se procesan <strong>uno a uno, en orden alfabético</strong>. Si tenés 5 casos, calcula 5 × 5-15 min = ~30-75 min total.
+  </div>
+
+  <label class="drop" id="drop">
+    <input type="file" id="zipInput" accept=".zip">
+    <div>📦 <strong>Haz clic o arrastra el ZIP aquí</strong></div>
+    <span class="hint">Solo archivos .zip</span>
+  </label>
+
+  <ul class="file-list" id="lista"></ul>
+
+  <div class="opcion-fallo" style="margin: 12px 0; padding: 10px 12px; background: #f5f7fb; border-radius: 8px; border: 1px solid #e0e6ef;">
+    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
+      <input type="checkbox" id="generar_cuarto" style="width: 16px; height: 16px; cursor: pointer;">
+      <span><strong>Generar CUARTA (Fallar) — aplica a todos los casos del lote</strong></span>
+    </label>
+    <p style="margin: 6px 0 0 24px; font-size: 13px; color: var(--muted, #666);">
+      Si lo desactivas, todos los casos del lote se procesan solo en modo extracción de hechos.
+    </p>
+  </div>
+
+  <div class="actions">
+    <button class="primary" id="enviar" disabled>Analizar ZIP</button>
+  </div>
+
+  <div class="toast error" id="errMsg"></div>
+</section>
+
+<!-- ============ MODAL DE CONFIRMACIÓN ============ -->
+<div id="modalOverlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.55); z-index: 1000; align-items: center; justify-content: center; padding: 20px;">
+  <div id="modalCard" style="background: #fff; border-radius: 12px; max-width: 640px; width: 100%; padding: 28px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); max-height: 90vh; overflow-y: auto;">
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+      <span style="font-size: 32px;">📦</span>
+      <h2 style="margin: 0;" id="modalTitulo">Confirmar lote</h2>
+    </div>
+
+    <p style="font-size: 15px; margin: 0 0 12px;" id="modalSubtitulo">Detecté <strong>N</strong> caso(s) en tu ZIP. Verificá que sea lo que esperabas antes de iniciar.</p>
+
+    <div id="modalAdvertencias"></div>
+
+    <div style="background: #f5f7fb; border: 1px solid #e0e6ef; border-radius: 8px; padding: 12px 14px; margin: 12px 0;">
+      <div style="font-size: 12px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .04em;">Casos detectados:</div>
+      <div id="modalCasos"></div>
+    </div>
+
+    <div style="font-size: 12px; color: var(--muted); margin: 12px 0;" id="modalModo"></div>
+
+    <details style="font-size: 12px; color: var(--muted); margin: 12px 0;">
+      <summary style="cursor: pointer;">¿No es el número de casos que esperabas?</summary>
+      <div style="margin-top: 6px; line-height: 1.6;">
+        El sistema detecta <strong>una carpeta de primer nivel del ZIP = un caso</strong>. Estructura esperada:
+        <pre style="margin: 6px 0; padding: 8px; background: #fff; border-radius: 4px; font-size: 11px;">mi_lote.zip
+├── caso_aurora/        ← carpeta de primer nivel = 1 caso
+│   ├── expediente.pdf
+│   └── audio.mp3
+├── caso_bruno/         ← otra carpeta = otro caso
+│   └── expediente.pdf
+└── caso_celeste/
+    └── expediente.pdf</pre>
+        <strong>Error común:</strong> si zipeás una carpeta padre que contiene los casos (ej. <code>test/Ejemplo1/...</code>, <code>test/Ejemplo2/...</code>), el sistema lo ve como 1 solo caso llamado <code>test</code>. Solución: seleccioná las carpetas de cada caso directamente y zipealas, sin envolverlas.
+      </div>
+    </details>
+
+    <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+      <button id="btnCancelar" class="secondary" style="padding: 10px 20px; cursor: pointer;">Cancelar</button>
+      <button id="btnIniciar" class="primary" style="padding: 10px 24px; cursor: pointer;">Iniciar procesamiento ▶</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const drop = document.getElementById("drop");
+const zipInput = document.getElementById("zipInput");
+const lista = document.getElementById("lista");
+const enviar = document.getElementById("enviar");
+const errMsg = document.getElementById("errMsg");
+let archivoZip = null;
+
+function pintarZip() {
+  lista.innerHTML = "";
+  if (!archivoZip) { enviar.disabled = true; return; }
+  const tamMB = (archivoZip.size / 1024 / 1024).toFixed(1);
+  const li = document.createElement("li");
+  li.innerHTML = `
+    <span class="badge">ZIP</span>
+    <span class="name">${archivoZip.name}</span>
+    <span class="size">${tamMB} MB</span>
+    <button class="x" title="Quitar" id="quitar">×</button>`;
+  lista.appendChild(li);
+  document.getElementById("quitar").addEventListener("click", e => {
+    e.preventDefault();
+    archivoZip = null;
+    pintarZip();
+  });
+  enviar.disabled = false;
+}
+
+zipInput.addEventListener("change", () => {
+  if (zipInput.files[0]) archivoZip = zipInput.files[0];
+  zipInput.value = "";
+  pintarZip();
+});
+
+["dragenter","dragover"].forEach(ev =>
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); })
+);
+["dragleave","drop"].forEach(ev =>
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); })
+);
+drop.addEventListener("drop", e => {
+  if (e.dataTransfer.files[0] && e.dataTransfer.files[0].name.toLowerCase().endsWith(".zip")) {
+    archivoZip = e.dataTransfer.files[0];
+    pintarZip();
+  }
+});
+
+// Datos del preview actual (se rellena después del POST a /batch/upload)
+let previewData = null;
+
+const modalOverlay = document.getElementById("modalOverlay");
+const modalSubtitulo = document.getElementById("modalSubtitulo");
+const modalCasos = document.getElementById("modalCasos");
+const modalAdvertencias = document.getElementById("modalAdvertencias");
+const modalModo = document.getElementById("modalModo");
+const btnCancelar = document.getElementById("btnCancelar");
+const btnIniciar = document.getElementById("btnIniciar");
+
+function abrirModal(data) {
+  previewData = data;
+  const n = data.total_casos || 0;
+  modalSubtitulo.innerHTML = `Detecté <strong>${n}</strong> caso(s) en tu ZIP. Verificá que sea lo que esperabas antes de iniciar.`;
+
+  const nombres = data.nombres || [];
+  modalCasos.innerHTML = nombres.length > 0
+    ? nombres.map((x, i) => `<span style="display: inline-block; padding: 4px 10px; margin: 3px 6px 3px 0; background: #fff; border: 1px solid #d6e0f0; border-radius: 4px; font-size: 13px; font-family: monospace;">${i + 1}. ${x}</span>`).join("")
+    : "<em>(sin casos detectados)</em>";
+
+  if (data.advertencias && data.advertencias.length > 0) {
+    modalAdvertencias.innerHTML = '<div class="toast info visible" style="margin: 8px 0;">⚠ ' + data.advertencias.join(" ") + '</div>';
+  } else {
+    modalAdvertencias.innerHTML = "";
+  }
+
+  const modo = data.generar_cuarto ? "Modo: <strong>Completo</strong> (con análisis y fallo CUARTA)" : "Modo: <strong>Solo hechos</strong> (sin CUARTA, más rápido)";
+  modalModo.innerHTML = "🛠 " + modo;
+
+  modalOverlay.style.display = "flex";
+}
+
+function cerrarModal() {
+  modalOverlay.style.display = "none";
+  previewData = null;
+}
+
+btnIniciar.addEventListener("click", async () => {
+  if (!previewData) return;
+  btnIniciar.disabled = true;
+  btnIniciar.textContent = "Iniciando...";
+  try {
+    const r = await fetch(previewData.url_iniciar, { method: "POST" });
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    window.location.href = j.url_batch;
+  } catch (e) {
+    btnIniciar.disabled = false;
+    btnIniciar.textContent = "Iniciar procesamiento ▶";
+    alert("Error al iniciar: " + e.message);
+  }
+});
+
+btnCancelar.addEventListener("click", async () => {
+  if (!previewData) { cerrarModal(); return; }
+  btnCancelar.disabled = true;
+  btnCancelar.textContent = "Cancelando...";
+  try {
+    await fetch(previewData.url_cancelar, { method: "POST" });
+  } catch (e) {
+    console.warn("No se pudo cancelar en backend:", e);
+  }
+  btnCancelar.disabled = false;
+  btnCancelar.textContent = "Cancelar";
+  cerrarModal();
+  // Volver al estado inicial del form
+  archivoZip = null;
+  pintarZip();
+  enviar.disabled = false;
+  enviar.textContent = "Analizar ZIP";
+});
+
+enviar.addEventListener("click", async () => {
+  if (!archivoZip) return;
+  enviar.disabled = true;
+  enviar.textContent = "Analizando ZIP...";
+  errMsg.classList.remove("visible");
+
+  const fd = new FormData();
+  fd.append("zip", archivoZip);
+  fd.append("generar_cuarto", document.getElementById("generar_cuarto").checked ? "1" : "0");
+  try {
+    const r = await fetch("/batch/upload", { method: "POST", body: fd });
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    // En lugar de redirigir, abrimos el modal con el preview
+    abrirModal(j);
+    enviar.disabled = false;
+    enviar.textContent = "Analizar ZIP";
+  } catch (e) {
+    errMsg.textContent = "Error: " + e.message;
+    errMsg.classList.add("visible");
+    enviar.disabled = false;
+    enviar.textContent = "Analizar ZIP";
+  }
+});
+</script>
+
+{% else %}
+<!-- ============ MODO SEGUIMIENTO ============ -->
+<p class="tagline" style="font-family: monospace; font-size: 12px;">{{ batch_id }}</p>
+
+<section class="card">
+  <!-- Banner de detección de casos (info inicial al cargar el lote) -->
+  <div id="bannerDetec" style="display: none; margin-bottom: 16px; padding: 14px 16px; border-radius: 8px; border: 1px solid #c7d8f5; background: linear-gradient(135deg, #eff5ff 0%, #f5f7fb 100%);">
+    <div style="display: flex; align-items: flex-start; gap: 12px;">
+      <span style="font-size: 24px; line-height: 1;">📦</span>
+      <div style="flex: 1;">
+        <div style="font-size: 16px; font-weight: 600; margin-bottom: 4px;" id="bannerTitulo">Detectando casos del ZIP...</div>
+        <div id="bannerCasos" style="font-size: 13px; color: #444; margin-bottom: 8px;"></div>
+        <details style="font-size: 12px; color: var(--muted);">
+          <summary style="cursor: pointer;">¿No es el número de casos que esperabas?</summary>
+          <div style="margin-top: 6px; line-height: 1.6;">
+            El sistema detecta <strong>una carpeta de primer nivel del ZIP = un caso</strong>. Estructura esperada:
+            <pre style="margin: 6px 0; padding: 8px; background: #fff; border-radius: 4px; font-size: 11px;">mi_lote.zip
+├── caso_aurora/        ← carpeta de primer nivel = 1 caso
+│   ├── expediente.pdf
+│   └── audio.mp3
+├── caso_bruno/         ← otra carpeta = otro caso
+│   └── expediente.pdf
+└── caso_celeste/       ← y así
+    └── expediente.pdf</pre>
+            <strong>Error común:</strong> si zipeás una carpeta padre que contiene los casos (ej. <code>test/Ejemplo1/...</code>, <code>test/Ejemplo2/...</code>), el sistema lo ve como 1 solo caso llamado <code>test</code>. Solución: seleccioná las carpetas de cada caso y zipealas directamente, sin envolverlas.
+            <br><br>
+            <a href="/batch">↻ Subir otro ZIP</a>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <h2 id="batchTitulo">Cargando lote...</h2>
+  <div id="resumen" style="font-size: 14px; color: var(--muted); margin-bottom: 8px;"></div>
+  <div id="advertencias"></div>
+
+  <table class="batch-tabla" style="width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px;">
+    <thead>
+      <tr style="background: #f5f7fb; text-align: left;">
+        <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">#</th>
+        <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Caso</th>
+        <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Archivos</th>
+        <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Estado</th>
+        <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Detalle</th>
+        <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Acciones</th>
+      </tr>
+    </thead>
+    <tbody id="filas">
+      <tr><td colspan="6" style="padding: 16px; text-align: center; color: var(--muted);">Cargando...</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<p style="margin-top: 28px;"><a class="back" href="/batch">← Subir otro lote</a></p>
+
+<script>
+const batchId = {{ batch_id|tojson }};
+const titEl = document.getElementById("batchTitulo");
+const resEl = document.getElementById("resumen");
+const advEl = document.getElementById("advertencias");
+const filasEl = document.getElementById("filas");
+const bannerEl = document.getElementById("bannerDetec");
+const bannerTitEl = document.getElementById("bannerTitulo");
+const bannerCasosEl = document.getElementById("bannerCasos");
+let bannerLlenado = false;
+
+function llenarBannerDeteccion(data) {
+  if (bannerLlenado) return;
+  const n = data.total || 0;
+  const nombres = (data.casos || []).map(c => c.nombre);
+  const nombresHtml = nombres.length > 0
+    ? nombres.map((x, i) => `<span style="display: inline-block; padding: 3px 9px; margin: 3px 5px 3px 0; background: #fff; border: 1px solid #d6e0f0; border-radius: 4px; font-size: 12px; font-family: monospace;">${i + 1}. ${x}</span>`).join("")
+    : "<em>(sin casos detectados)</em>";
+  bannerTitEl.textContent = `Detecté ${n} caso(s) en el ZIP`;
+  const modo = data.generar_cuarto ? "Modo: <strong>Completo</strong> (con CUARTA)" : "Modo: <strong>Solo hechos</strong> (sin CUARTA)";
+  bannerCasosEl.innerHTML = `<strong>Casos a procesar:</strong><br>${nombresHtml}<div style="margin-top: 6px; font-size: 12px;">🛠 ${modo}</div>`;
+  bannerEl.style.display = "block";
+  bannerLlenado = true;
+}
+
+function badgeEstado(estado) {
+  return `<span class="estado-pill ${estado}">${estado}</span>`;
+}
+
+function pintarFilas(data) {
+  if (!data.casos || data.casos.length === 0) {
+    filasEl.innerHTML = '<tr><td colspan="6" style="padding: 16px; text-align: center; color: var(--muted);">(sin casos)</td></tr>';
+    return;
+  }
+  filasEl.innerHTML = data.casos.map((c, i) => {
+    let detalle = "";
+    if (c.estado === "error") {
+      detalle = `<span style="color: var(--error, #c00);">${c.error || "Falló"}</span>`;
+    } else if (c.estado === "listo") {
+      detalle = c.archivos_salida.length > 0 ? "✓ " + c.archivos_salida.join(", ") : "✓ listo";
+    } else if (c.ultimo_log) {
+      detalle = `<span style="color: var(--muted);">${c.ultimo_log.replace(/^\[\d{2}:\d{2}:\d{2}\]\s*/, "")}</span>`;
+    } else {
+      detalle = "—";
+    }
+    const acciones = c.estado === "listo"
+      ? c.archivos_salida.map(a => `<a href="/download/${c.caso_id}/${encodeURIComponent(a)}" style="margin-right: 6px; font-size: 12px;">⬇ ${a.split(".").pop()}</a>`).join("")
+      : `<a href="/caso/${c.caso_id}" style="font-size: 12px;">ver →</a>`;
+    return `
+      <tr>
+        <td style="padding: 8px; border-bottom: 1px solid #eef;">${i + 1}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #eef;"><strong>${c.nombre}</strong><br><span style="font-family: monospace; font-size: 11px; color: var(--muted);">${c.caso_id}</span></td>
+        <td style="padding: 8px; border-bottom: 1px solid #eef;">${c.n_archivos}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #eef;">${badgeEstado(c.estado)}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #eef;">${detalle}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #eef;">${acciones}</td>
+      </tr>`;
+  }).join("");
+}
+
+let polling = true;
+async function tick() {
+  try {
+    const r = await fetch(`/batch/${batchId}/status`);
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+
+    // Banner de detección (solo se llena la primera vez)
+    llenarBannerDeteccion(j);
+
+    titEl.textContent = j.finalizado ? "✓ Lote terminado" : "Procesando lote";
+    const c = j.contadores;
+    resEl.innerHTML = `<strong>${j.total}</strong> caso(s) — ✓ ${c.listo} listos · ⏳ ${c.procesando} procesando · 🕒 ${c.en_cola} en cola · ✗ ${c.error} con error`;
+    if (j.advertencias && j.advertencias.length) {
+      advEl.innerHTML = '<div class="toast info visible">⚠ ' + j.advertencias.join(" ") + '</div>';
+    } else {
+      advEl.innerHTML = "";
+    }
+    pintarFilas(j);
+
+    if (j.finalizado) {
+      polling = false;
+      return;
+    }
+    if (polling) setTimeout(tick, 4000);
+  } catch (e) {
+    titEl.textContent = "Error consultando estado del lote";
+    advEl.innerHTML = '<div class="toast error visible">' + e.message + '</div>';
+    if (polling) setTimeout(tick, 8000);
+  }
+}
+tick();
+</script>
+{% endif %}
+
+</body>
+</html>

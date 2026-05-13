@@ -21,6 +21,8 @@ sic-diligenciador/workspaces/
 sic-diligenciador/cache/
 sic-diligenciador/audit.csv
 sic-diligenciador/feedback.jsonl
+sic-diligenciador/app.log
+*.log
 
 # Casos de ejemplo (datos personales reales: expedientes, facturas, audios)
 sic-diligenciador/knowledge/ejemplos/

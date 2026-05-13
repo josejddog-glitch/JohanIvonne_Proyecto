@@ -21,6 +21,7 @@
   </div>
 
   <div class="steps">
+    <div class="stepi" data-s="en_cola">0 · En cola</div>
     <div class="stepi" data-s="clasificando">1 · Clasificando</div>
     <div class="stepi" data-s="transcribiendo">2 · Transcribiendo audio</div>
     <div class="stepi" data-s="redactando">3 · Redactando</div>
@@ -131,11 +132,15 @@
   <pre id="errBody" style="white-space: pre-wrap; background: var(--error-bg); padding: 14px; border-radius: 6px; font-size: 13px;"></pre>
 </section>
 
-<p style="margin-top: 28px;"><a class="back" href="/">← Procesar otro caso</a></p>
+<p style="margin-top: 28px;">
+  <a class="back" href="/individual">← Procesar otro caso</a>
+  &nbsp;·&nbsp;
+  <a class="back" href="/batch">📦 Volver al modo lote</a>
+</p>
 
 <script>
 const casoId = {{ caso_id|tojson }};
-const ESTADOS = ["clasificando", "transcribiendo", "redactando", "listo"];
+const ESTADOS = ["en_cola", "clasificando", "transcribiendo", "redactando", "listo"];
 const estadoEl = document.getElementById("estado");
 const logEl = document.getElementById("log");
 const descPanel = document.getElementById("descPanel");

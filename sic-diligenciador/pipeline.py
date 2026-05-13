@@ -32,7 +32,7 @@ WORKSPACES_DIR = ROOT / "workspaces"
 @dataclass
 class CasoEstado:
     caso_id: str
-    estado: str = "pendiente"  # pendiente | clasificando | transcribiendo | redactando | listo | error
+    estado: str = "pendiente"  # en_cola | pendiente | clasificando | transcribiendo | redactando | listo | error
     iniciado: str = ""
     finalizado: str = ""
     workspace: str = ""
@@ -73,6 +73,19 @@ def cargar_estado(caso_id: str) -> CasoEstado | None:
         return None
     data = json.loads(archivo.read_text(encoding="utf-8"))
     return CasoEstado(**data)
+
+
+def encolar_caso(caso_id: str) -> None:
+    """Cambia el estado del caso a 'en_cola' (todavía no procesando).
+    Lo usa `batch.py` después de crear el caso y antes de meterlo a la cola
+    global del worker.
+    """
+    estado = cargar_estado(caso_id)
+    if estado is None:
+        return
+    estado.estado = "en_cola"
+    estado.agregar_log("Caso en cola, esperando turno del worker.")
+    _guardar_estado(estado)
 
 
 def crear_caso(

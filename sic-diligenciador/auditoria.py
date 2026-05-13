@@ -9,11 +9,17 @@ from __future__ import annotations
 import csv
 import json
 import re
+import threading
 from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 AUDIT_CSV = ROOT / "audit.csv"
+
+# Lock global: protege audit.csv contra escrituras concurrentes desde múltiples
+# workers (futuro paralelismo). Hoy el worker de batch.py es único, así que
+# el lock no contiende, pero deja la fundación lista.
+_audit_lock = threading.Lock()
 
 CAMPOS = [
     "caso_id",
@@ -123,9 +129,10 @@ def registrar(estado: object) -> None:
         "error": (getattr(estado, "error", "") or "")[:500],
     }
 
-    nuevo = not AUDIT_CSV.exists()
-    with AUDIT_CSV.open("a", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=CAMPOS)
-        if nuevo:
-            w.writeheader()
-        w.writerow(fila)
+    with _audit_lock:
+        nuevo = not AUDIT_CSV.exists()
+        with AUDIT_CSV.open("a", encoding="utf-8", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=CAMPOS)
+            if nuevo:
+                w.writeheader()
+            w.writerow(fila)

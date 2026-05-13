@@ -14,12 +14,24 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, render_template, request, send_file, url_for
+from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, url_for
 
+import batch
 import feedback_log
 import pipeline
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# Logging a consola Y a archivo persistente (útil cuando se arranca via
+# iniciar.vbs que oculta la ventana). El archivo rota implícitamente cada
+# vez que se reinicia el servidor.
+_LOG_PATH = Path(__file__).resolve().parent / "app.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(str(_LOG_PATH), mode="a", encoding="utf-8"),
+    ],
+)
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB total upload
@@ -39,7 +51,16 @@ def _lanzar_pipeline_async(caso_id: str, observaciones: str = "") -> None:
 
 
 @app.route("/", methods=["GET"])
+def raiz():
+    """La vista por defecto es el modo lote. Para el modo de un solo caso
+    usar `/individual`.
+    """
+    return redirect(url_for("pagina_batch_upload"))
+
+
+@app.route("/individual", methods=["GET"])
 def index():
+    """Modo upload de UN solo caso (mantenido por compatibilidad)."""
     return render_template("index.html")
 
 
@@ -114,9 +135,9 @@ def upload():
     if not pares:
         return jsonify({"error": "Archivos vacíos"}), 400
 
-    # Flag: si el checkbox "Generar CUARTA (Fallar)" está desmarcado, el modelo
-    # solo extrae hechos (SEGUNDO + TERCERO) sin generar el análisis jurídico.
-    generar_cuarto = request.form.get("generar_cuarto", "1") != "0"
+    # Flag: si el checkbox "Generar CUARTA (Fallar)" está marcado, el modelo
+    # genera el análisis jurídico. Por defecto OFF (solo extrae hechos).
+    generar_cuarto = request.form.get("generar_cuarto", "0") == "1"
 
     estado = pipeline.crear_caso(pares, generar_cuarto=generar_cuarto)
     _lanzar_pipeline_async(estado.caso_id)
@@ -232,5 +253,115 @@ def download(caso_id: str, filename: str):
     return send_file(str(archivo), as_attachment=True)
 
 
+# ============================================================
+# Batch (lote): procesar varios casos en un solo ZIP, secuencial.
+# ============================================================
+
+@app.route("/batch", methods=["GET"])
+def pagina_batch_upload():
+    """Página de upload de ZIP (modo lote)."""
+    return render_template("batch.html", batch_id=None)
+
+
+@app.route("/batch/upload", methods=["POST"])
+def batch_upload():
+    """Recibe un ZIP y crea N casos como PREVIEW (estado pendiente, sin encolar).
+    El usuario después debe confirmar via /batch/<id>/iniciar para empezar
+    el procesamiento real.
+    """
+    zip_file = request.files.get("zip")
+    if zip_file is None or not zip_file.filename:
+        return jsonify({"error": "No se subió ningún archivo ZIP."}), 400
+    if not zip_file.filename.lower().endswith(".zip"):
+        return jsonify({"error": "El archivo debe ser .zip."}), 400
+
+    generar_cuarto = request.form.get("generar_cuarto", "0") == "1"
+    try:
+        estado = batch.crear_batch_preview(zip_file.read(), generar_cuarto=generar_cuarto)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logging.exception("Error procesando ZIP")
+        return jsonify({"error": f"Error inesperado: {e}"}), 500
+
+    # Devolvemos info detallada para que el frontend muestre el modal de
+    # confirmación con los nombres de los casos detectados.
+    nombres_lista = [estado.nombres[cid] for cid in estado.caso_ids]
+    return jsonify({
+        "batch_id": estado.batch_id,
+        "total_casos": len(estado.caso_ids),
+        "nombres": nombres_lista,
+        "generar_cuarto": estado.generar_cuarto,
+        "advertencias": estado.advertencias,
+        "url_iniciar": url_for("batch_iniciar", batch_id=estado.batch_id),
+        "url_cancelar": url_for("batch_cancelar", batch_id=estado.batch_id),
+        "url_batch": url_for("pagina_batch_seguimiento", batch_id=estado.batch_id),
+    })
+
+
+@app.route("/batch/<batch_id>/iniciar", methods=["POST"])
+def batch_iniciar(batch_id: str):
+    """Confirma el preview y encola los casos para procesamiento real."""
+    estado = batch.iniciar_batch(batch_id)
+    if estado is None:
+        return jsonify({"error": "Batch no existe"}), 404
+    return jsonify({
+        "batch_id": batch_id,
+        "url_batch": url_for("pagina_batch_seguimiento", batch_id=batch_id),
+    })
+
+
+@app.route("/batch/<batch_id>/cancelar", methods=["POST"])
+def batch_cancelar(batch_id: str):
+    """Cancela un batch en preview (marca todos sus casos como error)."""
+    estado = batch.cancelar_batch(batch_id)
+    if estado is None:
+        return jsonify({"error": "Batch no existe"}), 404
+    return jsonify({"batch_id": batch_id, "ok": True})
+
+
+@app.route("/batch/<batch_id>", methods=["GET"])
+def pagina_batch_seguimiento(batch_id: str):
+    """Página con la tabla de progreso del lote."""
+    if batch.cargar_batch(batch_id) is None:
+        abort(404)
+    return render_template("batch.html", batch_id=batch_id)
+
+
+@app.route("/batch/<batch_id>/status", methods=["GET"])
+def batch_status(batch_id: str):
+    """JSON con el estado actual de todos los casos del batch."""
+    data = batch.estado_completo_batch(batch_id)
+    if data is None:
+        return jsonify({"error": "Batch no existe"}), 404
+    return jsonify(data)
+
+
+@app.route("/api/detener-procesos", methods=["POST"])
+def api_detener_procesos():
+    """Endpoint para el botón 'Detener procesos en curso' de la UI.
+    Vacía la cola del worker, mata subprocesos claude hijos, y marca todos
+    los casos no terminales como error. El worker queda vivo esperando.
+    """
+    stats = batch.detener_procesos()
+    return jsonify({"ok": True, "stats": stats})
+
+
+@app.route("/batches", methods=["GET"])
+def pagina_historial_batches():
+    """Historial de todos los lotes procesados."""
+    return render_template("historial_batch.html")
+
+
+@app.route("/batches/json", methods=["GET"])
+def listar_batches_json():
+    """JSON con los últimos N batches y sus contadores agregados."""
+    return jsonify({"batches": batch.listar_batches(limite=50)})
+
+
 if __name__ == "__main__":
+    # Re-encolar casos huérfanos (que quedaron pendientes por un reinicio).
+    n_recuperados = batch.recuperar_pendientes()
+    if n_recuperados:
+        logging.info("Recuperados %d caso(s) huérfano(s) tras reinicio.", n_recuperados)
     app.run(host="127.0.0.1", port=8000, debug=False)

@@ -163,8 +163,15 @@ button.success:disabled { background: #a8b3bd; cursor: not-allowed; }
 .estado-pill.transcribiendo, .estado-pill.redactando {
   background: var(--warn-bg); color: var(--warn);
 }
+.estado-pill.en_cola { background: #eef0f4; color: #555; }
 .estado-pill.listo { background: var(--success-bg); color: var(--success); }
 .estado-pill.error { background: var(--error-bg); color: var(--error); }
+
+/* Tabla de batch (lote) */
+.batch-tabla th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+.batch-tabla tbody tr:hover { background: #fafbfd; }
+.batch-tabla a { color: var(--link, #2563eb); text-decoration: none; }
+.batch-tabla a:hover { text-decoration: underline; }
 
 .steps {
   display: flex; gap: 4px; margin: 18px 0;
