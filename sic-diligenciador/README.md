@@ -2,16 +2,39 @@
 
 Herramienta semi-automática para redactar borradores de resoluciones de apelación de la SIC (sector comunicaciones) a partir del expediente y los anexos del caso.
 
-## Cómo correrla
+## Instalación rápida (PC nuevo Windows)
 
-### Primera vez
+**Un solo paso:**
 
 ```bat
-cd C:\Daniel\JOHAN_IVONNE\sic-diligenciador
-pip install -r requirements.txt
+git clone https://github.com/josejddog-glitch/JohanIvonne_Proyecto.git C:\JOHAN_IVONNE
+cd C:\JOHAN_IVONNE\sic-diligenciador
+instalar.bat
 ```
 
-Verifica que tengas Claude Code instalado y sesión Pro activa:
+`instalar.bat` se encarga de **todo automáticamente**:
+1. Instala Python, Node, Git, Tesseract y Poppler con `winget`.
+2. Instala Claude Code CLI globalmente con `npm`.
+3. Instala las dependencias Python (Flask, Whisper, python-docx, pytesseract, etc.).
+4. Pre-descarga el modelo Whisper `small` (~480 MB, una sola vez).
+5. Verifica el entorno OCR.
+6. Abre Claude para que actives tu sesión Pro/Max la primera vez.
+
+Tiempo total: **15-25 min** según velocidad de internet.
+
+**Para verificar que todo quedó bien:**
+```bat
+verificar.bat
+```
+
+Reporta versiones de cada componente y diagnostica el OCR. Si algo falla, corré `instalar.bat` de nuevo.
+
+> **Nota:** la auto-detección de Poppler busca en winget, Chocolatey, conda y ubicaciones estándar. Si lo instalaste en otra ruta, podés sobreescribir con variables de entorno (ver "Configuración avanzada" al final).
+
+## Cómo correrla
+
+### Verifica que tengas Claude Code activo
+
 ```bat
 claude --version
 ```

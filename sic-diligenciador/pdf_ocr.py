@@ -35,14 +35,49 @@ ROOT = Path(__file__).resolve().parent
 
 # Defaults para Windows con winget
 _DEFAULT_TESS = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-_DEFAULT_POPPLER = (
-    r"C:\Users\DANIEL.URUEÑA\AppData\Local\Microsoft\WinGet\Packages\\"
-    r"oschwartz10612.Poppler_Microsoft.Winget.Source_8wekyb3d8bbwe\poppler-25.07.0\Library\bin"
-)
 _DEFAULT_TESSDATA = str(ROOT / "bin" / "tessdata")
 
+
+def _autodetect_poppler() -> str:
+    """Busca Poppler en ubicaciones típicas de winget/conda/chocolatey/manual.
+
+    Retorna la ruta del directorio `bin` que contiene `pdftoppm.exe`, o
+    string vacío si no se encuentra. Funciona en cualquier PC sin necesidad
+    de configurar variables de entorno.
+    """
+    candidatos: list[Path] = []
+
+    # 1. winget (path dinámico según usuario)
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    if local_appdata:
+        winget_dir = Path(local_appdata) / "Microsoft" / "WinGet" / "Packages"
+        if winget_dir.exists():
+            # Buscar cualquier subcarpeta que empiece con "oschwartz10612.Poppler"
+            for poppler_pkg in winget_dir.glob("oschwartz10612.Poppler*"):
+                # Estructura típica: <pkg>/poppler-X.Y.Z/Library/bin
+                for bin_dir in poppler_pkg.glob("poppler-*/Library/bin"):
+                    candidatos.append(bin_dir)
+
+    # 2. Chocolatey
+    candidatos.append(Path(r"C:\ProgramData\chocolatey\lib\poppler\tools\Library\bin"))
+
+    # 3. Instalación manual común
+    candidatos.append(Path(r"C:\poppler\Library\bin"))
+    candidatos.append(Path(r"C:\Program Files\poppler\Library\bin"))
+
+    # 4. Conda
+    conda_prefix = os.environ.get("CONDA_PREFIX")
+    if conda_prefix:
+        candidatos.append(Path(conda_prefix) / "Library" / "bin")
+
+    for c in candidatos:
+        if c.exists() and (c / "pdftoppm.exe").exists():
+            return str(c)
+    return ""
+
+
 TESSERACT_EXE = os.environ.get("SIC_TESSERACT_EXE", _DEFAULT_TESS)
-POPPLER_BIN = os.environ.get("SIC_POPPLER_BIN", _DEFAULT_POPPLER)
+POPPLER_BIN = os.environ.get("SIC_POPPLER_BIN") or _autodetect_poppler()
 TESSDATA_LOCAL = os.environ.get("SIC_TESSDATA_DIR", _DEFAULT_TESSDATA)
 
 CACHE_DIR = ROOT / "cache" / "ocr"
@@ -245,4 +280,19 @@ def ocr_pdf_a_txt(pdf_path: Path, salida_dir: Path, usar_cache: bool = True) -> 
 
 def disponible() -> bool:
     """Heurística: chequea si Tesseract y Poppler existen donde esperamos."""
-    return Path(TESSERACT_EXE).exists() and Path(POPPLER_BIN).exists()
+    return bool(POPPLER_BIN) and Path(TESSERACT_EXE).exists() and Path(POPPLER_BIN).exists()
+
+
+def diagnosticar() -> dict:
+    """Diagnóstico completo del entorno OCR. Útil para troubleshooting al
+    instalar el programa en un PC nuevo. Retorna dict con cada componente
+    y si está disponible.
+    """
+    return {
+        "tesseract_exe": TESSERACT_EXE,
+        "tesseract_ok": Path(TESSERACT_EXE).exists(),
+        "poppler_bin": POPPLER_BIN or "(no detectado)",
+        "poppler_ok": bool(POPPLER_BIN) and Path(POPPLER_BIN).exists(),
+        "tessdata_dir": TESSDATA_LOCAL,
+        "tessdata_ok": Path(TESSDATA_LOCAL).exists() and (Path(TESSDATA_LOCAL) / "spa.traineddata").exists(),
+    }

@@ -35,6 +35,16 @@
     Tras pulsar <strong>Diligenciar</strong>, espera entre 5 y 15 minutos según el tamaño y la cantidad de audios. Verás el progreso en vivo en la siguiente pantalla.
   </div>
 
+  <div class="opcion-fallo" style="margin: 12px 0; padding: 10px 12px; background: #f5f7fb; border-radius: 8px; border: 1px solid #e0e6ef;">
+    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
+      <input type="checkbox" id="generar_cuarto" checked style="width: 16px; height: 16px; cursor: pointer;">
+      <span><strong>Generar CUARTA (Fallar)</strong></span>
+    </label>
+    <p style="margin: 6px 0 0 24px; font-size: 13px; color: var(--muted, #666);">
+      Si lo desactivas, la herramienta solo extrae los hechos del usuario y del operador (TÍTULO + SEGUNDO + TERCERO). No genera el análisis jurídico ni la decisión administrativa.
+    </p>
+  </div>
+
   <div class="actions">
     <button class="primary" id="enviar" disabled>Diligenciar</button>
   </div>
@@ -129,6 +139,8 @@ enviar.addEventListener("click", async () => {
 
   const fd = new FormData();
   archivos.forEach(f => fd.append("archivos", f));
+  const generarCuarto = document.getElementById("generar_cuarto").checked;
+  fd.append("generar_cuarto", generarCuarto ? "1" : "0");
   try {
     const r = await fetch("/upload", { method: "POST", body: fd });
     const j = await r.json();

@@ -20,7 +20,7 @@ Eres un especialista en redacción de respuestas administrativas de la Superinte
 
 ## ESTRUCTURA OBLIGATORIA DE LA RESPUESTA
 
-La resolución tiene **exactamente 4 elementos**, en este orden. **No añadas secciones no solicitadas** (NO incluyas un PRIMERO, NO incluyas un RESUELVE separado, NO firma).
+{% if generar_cuarto %}La resolución tiene **exactamente 4 elementos**, en este orden. **No añadas secciones no solicitadas** (NO incluyas un PRIMERO, NO incluyas un RESUELVE separado, NO firma).{% else %}**MODO EXTRACCIÓN DE HECHOS (sin CUARTA):** en este caso el abogado solo necesita el resumen del expediente. Genera **únicamente 3 elementos**: TÍTULO + SEGUNDO + TERCERO. **NO generes el numeral CUARTO** (análisis jurídico, citas literales de artículos, decisión administrativa). El campo `cuarto` del JSON debe ser `null` o estar ausente. El campo `resumen.sentido_sugerido` también queda vacío (`""`) — el abogado decide el sentido al redactar el fallo manualmente.{% endif %}
 
 ### 1. TÍTULO
 
@@ -73,7 +73,7 @@ Reglas:
   - Párr. 4 (si aplica): pronunciamiento del operador sobre pretensiones secundarias (gestión de cobro, centrales de riesgo, etc.).
   - Párr. 5: conclusión del operador (no encontró ajuste, ratifica posición, etc.).
 
-### 4. CUARTO – Conclusiones de la SIC (estilo manual SIC, con subsecciones)
+{% if generar_cuarto %}### 4. CUARTO – Conclusiones de la SIC (estilo manual SIC, con subsecciones)
 
 Encabezado obligatorio (literal, intro):
 > CUARTO: Que, en virtud de los hechos expuestos, entra esta Dirección a hacer las siguientes consideraciones:
@@ -140,6 +140,7 @@ Esto se traduce así:
    - **IMPROCEDENTE**: *"Corolario de lo expuesto, esta Dirección declarará improcedente la pretensión presentada de manera subsidiaria por el usuario bajo este numeral."*
 
 **Sin tope de palabras** en el CUARTO. Tan extenso como requieran las citas literales y el análisis.
+{% endif %}
 
 ## INSTRUCCIONES TRANSVERSALES
 
@@ -212,7 +213,7 @@ Cada `[VERIFICAR]` que pongas debes registrarlo también en `resumen.datos_a_ver
 {% endfor %}{% else %}_(sin candidatas — analiza desde cero)_
 {% endif %}
 
-## REFERENCIA: marcos normativos aplicables (úsalos LITERAL en el CUARTO)
+{% if generar_cuarto %}## REFERENCIA: marcos normativos aplicables (úsalos LITERAL en el CUARTO)
 
 A continuación tienes los bloques jurídicos pre-cargados. **Aplica la REGLA DE ORO** del CUARTO:
 
@@ -226,7 +227,9 @@ A continuación tienes los bloques jurídicos pre-cargados. **Aplica la REGLA DE
 
 {{ contenido }}
 
-{% endfor %}
+{% endfor %}{% else %}## NOTA: modo extracción de hechos
+
+En este caso no se cargan los bloques jurídicos del CUARTO — el abogado redactará el fallo a mano. Concéntrate en producir un TÍTULO correcto y un SEGUNDO + TERCERO completos y fieles al expediente.{% endif %}
 
 ---
 
@@ -234,7 +237,7 @@ A continuación tienes los bloques jurídicos pre-cargados. **Aplica la REGLA DE
 
 Responde con un único objeto JSON con esta estructura. **Nada de texto antes o después. Sin fences markdown.**
 
-```json
+{% if generar_cuarto %}```json
 {
   "etiqueta_sentido": "CONFIRMA",
   "titulo": "Decisión Empresarial: CUN 4331-25-0000446193 del 16 de noviembre de 2025.",
@@ -273,6 +276,32 @@ Responde con un único objeto JSON con esta estructura. **Nada de texto antes o 
     "tiempo_revision_humana": "bajo"
   }
 }
-```
+```{% else %}**MODO EXTRACCIÓN DE HECHOS:** el campo `cuarto` debe ser `null` y `bloques_usados` un array vacío. Tampoco incluyas `sentido_sugerido` (queda en `""`).
+
+```json
+{
+  "etiqueta_sentido": "",
+  "titulo": "Decisión Empresarial: CUN 4331-25-0000446193 del 16 de noviembre de 2025.",
+  "segundo": [
+    "SEGUNDO: Que, de acuerdo con la información allegada al expediente, se advierte que el motivo de inconformidad expuesto por el usuario titular de línea No. 3016255315, se circunscribe a que ... (hechos centrales).",
+    "Adicionalmente, el usuario solicitó ... (pretensiones específicas y/o resumen del recurso)."
+  ],
+  "tercero": [
+    "TERCERO: Que, frente a la inconformidad expuesta por el usuario, el operador manifestó que ... (postura inicial al derecho de petición).",
+    "Posteriormente, en respuesta al recurso de reposición, el operador ratificó ... (argumentos adicionales)."
+  ],
+  "cuarto": null,
+  "tipologias": [{"nombre": "Pérdida de número celular en prepago"}],
+  "bloques_usados": [],
+  "resumen": {
+    "sentido_sugerido": "",
+    "argumentos_a_favor": ["...", "..."],
+    "puntos_debiles": ["...", "..."],
+    "evidencia_citada": [{"cita": "consecutivo – 0, página 14", "fuente": "Reporte interno del operador"}],
+    "datos_a_verificar": ["...", "..."],
+    "tiempo_revision_humana": "bajo"
+  }
+}
+```{% endif %}
 
 EMPIEZA. Solo el JSON.

@@ -28,7 +28,7 @@
   </div>
 
   <div class="hint-box" id="tiempoMsg">
-    Esto suele tardar entre 5 y 15 minutos. Puedes dejar la pestaña abierta y seguir trabajando — verás el log abajo.
+    Calculando tiempo estimado... Puedes dejar la pestaña abierta y seguir trabajando — verás el log abajo.
   </div>
 
   <details>
@@ -147,6 +147,23 @@ const errBody = document.getElementById("errBody");
 const tiempoMsg = document.getElementById("tiempoMsg");
 
 let polling = true;
+let tiempoMsgActualizado = false;
+
+function actualizarTiempoMsg(generarCuarto, tieneAudio) {
+  if (tiempoMsgActualizado) return;
+  let texto;
+  if (generarCuarto === false) {
+    // Modo solo hechos: sin análisis jurídico ni CUARTA.
+    texto = tieneAudio
+      ? "Modo <strong>solo hechos</strong> (sin CUARTA): suele tardar entre <strong>3 y 7 minutos</strong> con audio. Puedes dejar la pestaña abierta — verás el log abajo."
+      : "Modo <strong>solo hechos</strong> (sin CUARTA): suele tardar entre <strong>2 y 5 minutos</strong>. Puedes dejar la pestaña abierta — verás el log abajo.";
+  } else {
+    // Modo completo: con CUARTA + bloques jurídicos.
+    texto = "Esto suele tardar entre <strong>5 y 15 minutos</strong> (modo completo con análisis jurídico). Puedes dejar la pestaña abierta y seguir trabajando — verás el log abajo.";
+  }
+  tiempoMsg.innerHTML = texto;
+  tiempoMsgActualizado = true;
+}
 
 function pintarPasos(estado) {
   document.querySelectorAll(".steps .stepi").forEach(el => {
@@ -173,6 +190,11 @@ async function tick() {
     pintarPasos(j.estado);
     logEl.textContent = (j.log || []).join("\n");
     logEl.scrollTop = logEl.scrollHeight;
+
+    // Personalizar el mensaje de tiempo estimado según el modo (con/sin CUARTA)
+    // y según si el caso tiene audio (que es lo que más tiempo agrega).
+    const tieneAudio = (j.clasificacion && (j.clasificacion.audios || []).length > 0);
+    actualizarTiempoMsg(j.generar_cuarto, tieneAudio);
 
     if (j.estado === "listo" && j.descargas) {
       tiempoMsg.style.display = "none";

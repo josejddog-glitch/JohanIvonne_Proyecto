@@ -40,6 +40,10 @@ class CasoEstado:
     archivos_salida: list[str] = field(default_factory=list)
     error: str = ""
     clasificacion: dict | None = None
+    # Si False, el modelo solo extrae hechos (TITULO + SEGUNDO + TERCERO) sin
+    # generar el numeral CUARTO. Útil cuando el abogado solo necesita el
+    # resumen del expediente y va a redactar el fallo a mano.
+    generar_cuarto: bool = True
 
     def agregar_log(self, msg: str) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
@@ -71,8 +75,17 @@ def cargar_estado(caso_id: str) -> CasoEstado | None:
     return CasoEstado(**data)
 
 
-def crear_caso(archivos_subidos: list[tuple[str, bytes]]) -> CasoEstado:
-    """Crea un caso nuevo, guarda los archivos en el workspace y retorna el estado inicial."""
+def crear_caso(
+    archivos_subidos: list[tuple[str, bytes]],
+    generar_cuarto: bool = True,
+) -> CasoEstado:
+    """Crea un caso nuevo, guarda los archivos en el workspace y retorna el estado inicial.
+
+    Args:
+        archivos_subidos: lista de (nombre, contenido) subidos por el usuario.
+        generar_cuarto: si False, el modelo solo genera TITULO+SEGUNDO+TERCERO
+            (extracción de hechos), no la CUARTA sección (análisis y fallo).
+    """
     caso_id = datetime.now().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
     workspace = _crear_workspace(caso_id)
     entrada = workspace / "entrada"
@@ -87,8 +100,10 @@ def crear_caso(archivos_subidos: list[tuple[str, bytes]]) -> CasoEstado:
         estado="pendiente",
         iniciado=datetime.now().isoformat(),
         workspace=str(workspace),
+        generar_cuarto=generar_cuarto,
     )
-    estado.agregar_log(f"Caso creado con {len(archivos_subidos)} archivo(s).")
+    modo = "completo (con CUARTA)" if generar_cuarto else "solo hechos (sin CUARTA)"
+    estado.agregar_log(f"Caso creado con {len(archivos_subidos)} archivo(s). Modo: {modo}.")
     _guardar_estado(estado)
     return estado
 
@@ -173,7 +188,12 @@ def procesar_caso(caso_id: str, observaciones: str = "") -> CasoEstado:
         estado.agregar_log("Construyendo prompt y llamando a Claude Code...")
         _guardar_estado(estado)
 
-        prompt_largo = _renderizar_prompt(workspace, clasificacion, observaciones=observaciones)
+        prompt_largo = _renderizar_prompt(
+            workspace,
+            clasificacion,
+            observaciones=observaciones,
+            generar_cuarto=estado.generar_cuarto,
+        )
         prompt_path = workspace / "prompt_usado.md"
         prompt_path.write_text(prompt_largo, encoding="utf-8")
 
@@ -308,6 +328,7 @@ def _renderizar_prompt(
     workspace: Path,
     clasificacion: file_classifier.ClasificacionCaso,
     observaciones: str = "",
+    generar_cuarto: bool = True,
 ) -> str:
     env = Environment(
         loader=FileSystemLoader(str(PROMPTS_DIR)),
@@ -377,5 +398,6 @@ def _renderizar_prompt(
         ],
         "bloques_inline": bloques_inline,
         "learnings": learnings_txt,
+        "generar_cuarto": generar_cuarto,
     }
     return plantilla_caso.render(**contexto)

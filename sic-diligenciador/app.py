@@ -114,7 +114,11 @@ def upload():
     if not pares:
         return jsonify({"error": "Archivos vacíos"}), 400
 
-    estado = pipeline.crear_caso(pares)
+    # Flag: si el checkbox "Generar CUARTA (Fallar)" está desmarcado, el modelo
+    # solo extrae hechos (SEGUNDO + TERCERO) sin generar el análisis jurídico.
+    generar_cuarto = request.form.get("generar_cuarto", "1") != "0"
+
+    estado = pipeline.crear_caso(pares, generar_cuarto=generar_cuarto)
     _lanzar_pipeline_async(estado.caso_id)
 
     return jsonify({

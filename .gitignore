@@ -46,3 +46,6 @@ desktop.ini
 *.key
 *.pem
 secrets.*
+
+# Config local de Claude Code (permisos personales del equipo)
+.claude/settings.local.json
