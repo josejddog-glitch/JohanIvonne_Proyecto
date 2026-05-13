@@ -15,8 +15,8 @@
   </div>
   <div style="display: flex; gap: 12px; align-items: center;">
     <button id="btnDetenerGlobal" onclick="detenerProcesosGlobal()" style="background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 600;">🛑 Detener procesos</button>
-    <a class="back" href="/batches" style="font-size: 14px;">📁 Historial</a>
-    <a class="back" href="/individual" style="font-size: 14px;">Caso individual</a>
+    <a class="back" href="/individual" style="font-size: 14px;">📄 Caso individual</a>
+    <a class="back" href="/batches" style="font-size: 14px;">📁 Historial de lotes</a>
   </div>
 </header>
 
@@ -319,12 +319,13 @@ enviar.addEventListener("click", async () => {
         <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Caso</th>
         <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Archivos</th>
         <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Estado</th>
+        <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Tiempo</th>
         <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Detalle</th>
         <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Acciones</th>
       </tr>
     </thead>
     <tbody id="filas">
-      <tr><td colspan="6" style="padding: 16px; text-align: center; color: var(--muted);">Cargando...</td></tr>
+      <tr><td colspan="7" style="padding: 16px; text-align: center; color: var(--muted);">Cargando...</td></tr>
     </tbody>
   </table>
 </section>
@@ -360,9 +361,22 @@ function badgeEstado(estado) {
   return `<span class="estado-pill ${estado}">${estado}</span>`;
 }
 
+function fmtDuracion(seg) {
+  if (seg === null || seg === undefined) return '<span style="color: var(--muted);">—</span>';
+  if (seg < 1) return "< 1s";
+  const s = Math.floor(seg);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m < 60) return `${m}m ${r}s`;
+  const h = Math.floor(m / 60);
+  const mr = m % 60;
+  return `${h}h ${mr}m`;
+}
+
 function pintarFilas(data) {
   if (!data.casos || data.casos.length === 0) {
-    filasEl.innerHTML = '<tr><td colspan="6" style="padding: 16px; text-align: center; color: var(--muted);">(sin casos)</td></tr>';
+    filasEl.innerHTML = '<tr><td colspan="7" style="padding: 16px; text-align: center; color: var(--muted);">(sin casos)</td></tr>';
     return;
   }
   filasEl.innerHTML = data.casos.map((c, i) => {
@@ -376,6 +390,14 @@ function pintarFilas(data) {
     } else {
       detalle = "—";
     }
+    // Tiempo: si está procesando, lo mostramos con cursiva (es en vivo, va subiendo).
+    // Si está listo/error, es el tiempo final.
+    const estTermino = c.estado === "listo" || c.estado === "error";
+    const tiempoHtml = c.duracion_seg !== null && c.duracion_seg !== undefined
+      ? (estTermino
+          ? `<span style="font-family: monospace; font-size: 13px;">${fmtDuracion(c.duracion_seg)}</span>`
+          : `<span style="font-family: monospace; font-size: 13px; font-style: italic; color: var(--muted);">${fmtDuracion(c.duracion_seg)}...</span>`)
+      : '<span style="color: var(--muted);">—</span>';
     const acciones = c.estado === "listo"
       ? c.archivos_salida.map(a => `<a href="/download/${c.caso_id}/${encodeURIComponent(a)}" style="margin-right: 6px; font-size: 12px;">⬇ ${a.split(".").pop()}</a>`).join("")
       : `<a href="/caso/${c.caso_id}" style="font-size: 12px;">ver →</a>`;
@@ -385,6 +407,7 @@ function pintarFilas(data) {
         <td style="padding: 8px; border-bottom: 1px solid #eef;"><strong>${c.nombre}</strong><br><span style="font-family: monospace; font-size: 11px; color: var(--muted);">${c.caso_id}</span></td>
         <td style="padding: 8px; border-bottom: 1px solid #eef;">${c.n_archivos}</td>
         <td style="padding: 8px; border-bottom: 1px solid #eef;">${badgeEstado(c.estado)}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #eef;">${tiempoHtml}</td>
         <td style="padding: 8px; border-bottom: 1px solid #eef;">${detalle}</td>
         <td style="padding: 8px; border-bottom: 1px solid #eef;">${acciones}</td>
       </tr>`;

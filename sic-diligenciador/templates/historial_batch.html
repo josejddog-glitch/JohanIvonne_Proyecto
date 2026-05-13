@@ -15,8 +15,8 @@
   </div>
   <div style="display: flex; gap: 12px; align-items: center;">
     <button id="btnDetenerGlobal" onclick="detenerProcesosGlobal()" style="background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 600;">🛑 Detener procesos</button>
+    <a class="back" href="/individual" style="font-size: 14px;">📄 Caso individual</a>
     <a class="back" href="/batch" style="font-size: 14px;">📦 Nuevo lote</a>
-    <a class="back" href="/individual" style="font-size: 14px;">Caso individual</a>
   </div>
 </header>
 
@@ -53,11 +53,12 @@ async function detenerProcesosGlobal() {
         <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Modo</th>
         <th style="padding: 8px; border-bottom: 1px solid #e0e6ef; text-align: center;">Casos</th>
         <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Estado</th>
+        <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Duración</th>
         <th style="padding: 8px; border-bottom: 1px solid #e0e6ef;">Acción</th>
       </tr>
     </thead>
     <tbody id="filas">
-      <tr><td colspan="6" style="padding: 16px; text-align: center; color: var(--muted);">Cargando...</td></tr>
+      <tr><td colspan="7" style="padding: 16px; text-align: center; color: var(--muted);">Cargando...</td></tr>
     </tbody>
   </table>
 </section>
@@ -79,6 +80,19 @@ function fmtFecha(iso) {
   } catch { return iso; }
 }
 
+function fmtDuracion(seg) {
+  if (seg === null || seg === undefined) return '<span style="color: var(--muted);">—</span>';
+  if (seg < 1) return "< 1s";
+  const s = Math.floor(seg);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m < 60) return `${m}m ${r}s`;
+  const h = Math.floor(m / 60);
+  const mr = m % 60;
+  return `${h}h ${mr}m`;
+}
+
 function badgesContadores(c, total) {
   const parts = [];
   if (c.listo > 0) parts.push(`<span class="estado-pill listo">✓ ${c.listo}</span>`);
@@ -96,7 +110,7 @@ async function cargar() {
     const batches = j.batches || [];
     if (batches.length === 0) {
       infoEl.textContent = "Aún no has procesado lotes.";
-      filasEl.innerHTML = '<tr><td colspan="6" style="padding: 16px; text-align: center; color: var(--muted);">No hay lotes procesados. <a href="/batch">Crear el primero</a>.</td></tr>';
+      filasEl.innerHTML = '<tr><td colspan="7" style="padding: 16px; text-align: center; color: var(--muted);">No hay lotes procesados. <a href="/batch">Crear el primero</a>.</td></tr>';
       return;
     }
     infoEl.innerHTML = `<strong>${batches.length}</strong> lote(s) mostrados (máx 50).`;
@@ -110,6 +124,15 @@ async function cargar() {
       else if (procesando) estadoGlobal = `<span class="estado-pill clasificando">en curso</span>`;
       else if (conErrores && !procesando) estadoGlobal = `<span class="estado-pill error">con errores</span>`;
       else estadoGlobal = `<span class="estado-pill en_cola">desconocido</span>`;
+      // Duración: total del lote (wall-clock) + promedio por caso si hay datos
+      let duracionHtml = '<span style="color: var(--muted);">—</span>';
+      if (b.duracion_total_seg !== null && b.duracion_total_seg !== undefined) {
+        const totalStr = fmtDuracion(b.duracion_total_seg);
+        const promedioStr = (b.duracion_promedio_seg !== null && b.duracion_promedio_seg !== undefined)
+          ? `<br><span style="font-size: 11px; color: var(--muted);">~${fmtDuracion(b.duracion_promedio_seg)} por caso</span>`
+          : "";
+        duracionHtml = `<span style="font-family: monospace; font-size: 13px;">${totalStr}</span>${promedioStr}`;
+      }
       return `
         <tr>
           <td style="padding: 8px; border-bottom: 1px solid #eef; font-family: monospace; font-size: 12px;">${b.batch_id}</td>
@@ -117,6 +140,7 @@ async function cargar() {
           <td style="padding: 8px; border-bottom: 1px solid #eef; font-size: 13px;">${modo}</td>
           <td style="padding: 8px; border-bottom: 1px solid #eef; text-align: center;"><strong>${b.total}</strong></td>
           <td style="padding: 8px; border-bottom: 1px solid #eef;">${estadoGlobal}<br><span style="font-size: 12px; margin-top: 4px; display: inline-block;">${badgesContadores(b.contadores, b.total)}</span></td>
+          <td style="padding: 8px; border-bottom: 1px solid #eef;">${duracionHtml}</td>
           <td style="padding: 8px; border-bottom: 1px solid #eef;"><a href="/batch/${b.batch_id}">ver →</a></td>
         </tr>`;
     }).join("");

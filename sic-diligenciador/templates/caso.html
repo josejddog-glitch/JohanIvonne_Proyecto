@@ -17,7 +17,10 @@
 <section class="card">
   <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
     <span style="font-size: 14px; color: var(--muted);">Estado actual:</span>
-    <span id="estado" class="estado-pill pendiente">cargando...</span>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <span id="tiempoCaso" style="font-family: monospace; font-size: 13px; color: var(--muted);"></span>
+      <span id="estado" class="estado-pill pendiente">cargando...</span>
+    </div>
   </div>
 
   <div class="steps">
@@ -153,6 +156,20 @@ const tiempoMsg = document.getElementById("tiempoMsg");
 
 let polling = true;
 let tiempoMsgActualizado = false;
+const tiempoCasoEl = document.getElementById("tiempoCaso");
+
+function fmtDuracion(seg) {
+  if (seg === null || seg === undefined) return "";
+  if (seg < 1) return "< 1s";
+  const s = Math.floor(seg);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m < 60) return `${m}m ${r}s`;
+  const h = Math.floor(m / 60);
+  const mr = m % 60;
+  return `${h}h ${mr}m`;
+}
 
 function actualizarTiempoMsg(generarCuarto, tieneAudio) {
   if (tiempoMsgActualizado) return;
@@ -193,6 +210,16 @@ async function tick() {
     estadoEl.textContent = j.estado;
     estadoEl.className = "estado-pill " + j.estado;
     pintarPasos(j.estado);
+
+    // Tiempo transcurrido (al lado del estado)
+    if (j.duracion_seg !== null && j.duracion_seg !== undefined) {
+      const enCurso = j.estado !== "listo" && j.estado !== "error";
+      tiempoCasoEl.innerHTML = enCurso
+        ? `⏱ <em>${fmtDuracion(j.duracion_seg)}...</em>`
+        : `⏱ ${fmtDuracion(j.duracion_seg)}`;
+    } else {
+      tiempoCasoEl.textContent = "";
+    }
     logEl.textContent = (j.log || []).join("\n");
     logEl.scrollTop = logEl.scrollHeight;
 

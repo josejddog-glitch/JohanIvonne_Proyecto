@@ -501,9 +501,25 @@ def detener_procesos() -> dict:
     return resultado
 
 
+def _duracion_seg(iniciado: str, finalizado: str = "") -> float | None:
+    """Calcula segundos entre `iniciado` y `finalizado` (ambos ISO).
+    Si `finalizado` está vacío, usa `datetime.now()` (caso en curso).
+    Si `iniciado` está vacío o no parseable, retorna None.
+    """
+    if not iniciado:
+        return None
+    try:
+        t0 = datetime.fromisoformat(iniciado)
+        t1 = datetime.fromisoformat(finalizado) if finalizado else datetime.now()
+        return max(0.0, (t1 - t0).total_seconds())
+    except Exception:
+        return None
+
+
 def listar_batches(limite: int = 50) -> list[dict]:
     """Retorna la lista de batches ordenados del más reciente al más antiguo.
-    Incluye contadores agregados (listos, en cola, error) para mostrar en la UI.
+    Incluye contadores agregados (listos, en cola, error) y duración total
+    del lote (desde el inicio hasta el último caso terminado).
     """
     if not BATCHES_DIR.exists():
         return []
@@ -519,6 +535,8 @@ def listar_batches(limite: int = 50) -> list[dict]:
         if batch_estado is None:
             continue
         contadores = {"en_cola": 0, "procesando": 0, "listo": 0, "error": 0}
+        suma_seg = 0.0
+        n_terminados = 0
         for caso_id in batch_estado.caso_ids:
             caso_estado = pipeline.cargar_estado(caso_id)
             if caso_estado is None:
@@ -531,6 +549,16 @@ def listar_batches(limite: int = 50) -> list[dict]:
                 contadores["en_cola"] += 1
             else:
                 contadores["procesando"] += 1
+            # Acumular duración de los casos terminados
+            if caso_estado.estado in {"listo", "error"} and caso_estado.iniciado and caso_estado.finalizado:
+                d = _duracion_seg(caso_estado.iniciado, caso_estado.finalizado)
+                if d is not None:
+                    suma_seg += d
+                    n_terminados += 1
+        # Duración total del lote (wall-clock): inicio del batch hasta finalizado o ahora
+        duracion_total = _duracion_seg(batch_estado.iniciado, batch_estado.finalizado)
+        # Promedio por caso terminado
+        promedio_seg = (suma_seg / n_terminados) if n_terminados > 0 else None
         salida.append({
             "batch_id": batch_estado.batch_id,
             "iniciado": batch_estado.iniciado,
@@ -538,6 +566,9 @@ def listar_batches(limite: int = 50) -> list[dict]:
             "generar_cuarto": batch_estado.generar_cuarto,
             "total": len(batch_estado.caso_ids),
             "contadores": contadores,
+            "duracion_total_seg": duracion_total,
+            "duracion_promedio_seg": promedio_seg,
+            "suma_duraciones_seg": suma_seg if n_terminados > 0 else None,
         })
     return salida
 
@@ -583,12 +614,19 @@ def estado_completo_batch(batch_id: str) -> dict | None:
                     1 for p in entrada.iterdir()
                     if p.is_file() and p.suffix.lower() in EXTENSIONES_VALIDAS
                 )
+        # Duración: si terminó, fin - inicio; si está en curso, ahora - inicio.
+        # Para casos en_cola/pendiente que no han empezado, no hay duración.
+        if caso_estado.estado in {"en_cola", "pendiente"}:
+            duracion_seg = None
+        else:
+            duracion_seg = _duracion_seg(caso_estado.iniciado, caso_estado.finalizado)
         casos.append({
             "caso_id": caso_estado.caso_id,
             "nombre": batch_estado.nombres.get(caso_id, caso_id),
             "estado": caso_estado.estado,
             "iniciado": caso_estado.iniciado,
             "finalizado": caso_estado.finalizado,
+            "duracion_seg": duracion_seg,
             "n_archivos": n_archivos,
             "error": caso_estado.error or "",
             "archivos_salida": [Path(p).name for p in (caso_estado.archivos_salida or [])],

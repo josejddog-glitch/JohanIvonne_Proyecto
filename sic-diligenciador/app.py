@@ -156,6 +156,11 @@ def status(caso_id: str):
         return jsonify({"error": "Caso no existe"}), 404
 
     payload = estado.__dict__.copy()
+    # Agregar duración en segundos (None si todavía no empezó)
+    if estado.estado in {"en_cola", "pendiente"}:
+        payload["duracion_seg"] = None
+    else:
+        payload["duracion_seg"] = batch._duracion_seg(estado.iniciado, estado.finalizado)
     if estado.estado == "listo":
         payload["descargas"] = [
             {
